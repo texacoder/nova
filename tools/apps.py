@@ -87,6 +87,112 @@ def website_url(name: str) -> str | None:
     return None
 
 
+# --- finding installed apps like the Start menu does (Windows) ------------------
+
+def _simple(text: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def clean_app_name(name: str) -> str:
+    """'the YouTube app' -> 'youtube'; 'Spotify application' -> 'spotify'."""
+    text = name.strip().strip("'\"").lower()
+    text = re.sub(r"^(the|my)\s+", "", text)
+    text = re.sub(r"\s+(desktop\s+)?(app|application|program)$", "", text)
+    return text[:-4] if text.endswith(".exe") else text
+
+
+def best_match(key: str, names) -> str | None:
+    """
+    Pick the installed app name that best matches `key`: an exact match, then a
+    name starting with it, then a name containing all its words (shortest wins).
+    """
+    wanted = _simple(key)
+    if len(wanted) < 2:
+        return None
+    key_words = set(re.findall(r"[a-z0-9]+", key.lower()))
+    exact, starts, words = [], [], []
+    for name in names:
+        simple = _simple(name)
+        if "uninstall" in simple:
+            continue
+        if simple == wanted:
+            exact.append(name)
+        elif len(wanted) >= 3 and simple.startswith(wanted):
+            starts.append(name)
+        elif key_words and key_words <= set(re.findall(r"[a-z0-9]+", name.lower())):
+            words.append(name)
+    for group in (exact, starts, words):
+        if group:
+            return min(group, key=len)
+    return None
+
+
+def shortcut_folders() -> list[Path]:
+    """Start menu and Desktop folders, where installed apps put their shortcuts."""
+    env = os.environ
+    folders = [
+        Path(env.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+        Path(env.get("PROGRAMDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+        Path(env.get("USERPROFILE", "")) / "Desktop",
+        Path(env.get("USERPROFILE", "")) / "OneDrive/Desktop",
+        Path(env.get("PUBLIC", "")) / "Desktop",
+    ]
+    return [folder for folder in folders if str(folder) not in ("", ".") and folder.is_dir()]
+
+
+def find_shortcut(key: str) -> str | None:
+    shortcuts = {}
+    for folder in shortcut_folders():
+        for path in folder.rglob("*.lnk"):
+            shortcuts.setdefault(path.stem, str(path))
+    match = best_match(key, shortcuts)
+    return shortcuts[match] if match else None
+
+
+_store_apps_cache: dict[str, str] | None = None
+
+
+def parse_start_apps(output: str) -> dict[str, str]:
+    """Parse `Get-StartApps | ConvertTo-Json` output into {name: AppID}."""
+    try:
+        data = json.loads(output or "[]")
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(data, dict):
+        data = [data]
+    return {item["Name"]: item["AppID"] for item in data
+            if isinstance(item, dict) and item.get("Name") and item.get("AppID")}
+
+
+def store_apps() -> dict[str, str]:
+    """All apps in the Start menu, including Microsoft Store apps: {name: AppID}."""
+    global _store_apps_cache
+    if _store_apps_cache is None:
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                 "Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress"],
+                capture_output=True, text=True, errors="replace", timeout=20,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            _store_apps_cache = parse_start_apps(result.stdout)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            log.warning("Could not list Start menu apps: %s", error)
+            _store_apps_cache = {}
+    return _store_apps_cache
+
+
+def find_start_menu_app(key: str) -> str | None:
+    apps = store_apps()
+    match = best_match(key, apps)
+    return f"shell:AppsFolder\\{apps[match]}" if match else None
+
+
+def is_shell_target(program: str) -> bool:
+    """Shortcuts and Store apps are opened by Windows itself, not started directly."""
+    return program.lower().endswith((".lnk", ".url")) or program.lower().startswith("shell:")
+
+
 def load_app_aliases(path: Path) -> dict[str, str]:
     """Read apps.json: {"geany": "C:/Program Files/Geany/bin/geany.exe", ...}."""
     if not path.exists():
@@ -119,9 +225,10 @@ def open_with_default_program(target: str) -> None:
 class OpenApplication(Tool):
     name = "open_application"
     description = (
-        "Open an application installed on the user's PC, optionally with arguments such as a file to "
-        "open. Example: name='geany', arguments=['C:/Users/me/NOVA_Workspace/hello.py']. For websites "
-        "(YouTube, Google, any web address) use open_path with the URL instead."
+        "Open an application installed on the user's PC (anything in the Start menu or on the Desktop, "
+        "including Microsoft Store apps and installed web apps like 'YouTube'), optionally with arguments "
+        "such as a file to open. Example: name='geany', arguments=['C:/Users/me/NOVA_Workspace/hello.py']. "
+        "When the user wants a website rather than an app, use open_path with the URL instead."
     )
     parameters = {
         "type": "object",
@@ -140,7 +247,7 @@ class OpenApplication(Tool):
         return load_app_aliases(self.config.apps_file)
 
     def find_app(self, name: str) -> str | None:
-        key = normalise_app_name(name)
+        key = clean_app_name(name)
         aliases = self.aliases()
         if key in aliases:
             return aliases[key]
@@ -152,19 +259,24 @@ class OpenApplication(Tool):
                 expanded = os.path.expandvars(location)
                 if os.path.isfile(expanded):
                     return expanded
+            # Anything installed: Start menu / Desktop shortcuts, then Store apps.
+            return find_shortcut(key) or find_start_menu_app(key)
         return None
 
     def needs_confirmation(self, arguments: dict) -> bool:
         name = str(arguments.get("name", ""))
-        key = normalise_app_name(name)
+        key = clean_app_name(name)
         if key in TRUSTED_APPS or key in self.aliases():
             return False
+        program = self.find_app(name)
+        if program and is_shell_target(program) and not arguments.get("arguments"):
+            return False  # an app installed in the Start menu, opened like clicking its icon
         # A website opens harmlessly in the browser (unless an app with that name exists).
-        return not (website_url(name) and not self.find_app(name))
+        return not (website_url(name) and not program)
 
     def describe(self, arguments: dict) -> str:
         name = str(arguments.get("name", ""))
-        url = website_url(name)
+        url = website_url(clean_app_name(name))
         if url and not self.find_app(name):
             return f"Open website: {url}"
         args = " ".join(str(a) for a in arguments.get("arguments") or [])
@@ -174,6 +286,15 @@ class OpenApplication(Tool):
     def run(self, name: str, arguments: list | None = None) -> str:
         args = [str(a) for a in (arguments or [])]
         program = self.find_app(name)
+        if program and is_shell_target(program):
+            try:
+                if args:
+                    os.startfile(program, "open", subprocess.list2cmdline(args))
+                else:
+                    os.startfile(program)
+            except OSError as error:
+                raise ToolError(f"Windows could not open {program}: {error}")
+            return f"Opened the installed app '{clean_app_name(name)}' ({program})."
         if program:
             flags = {}
             if IS_WINDOWS:
@@ -187,10 +308,10 @@ class OpenApplication(Tool):
                 raise ToolError(f"Could not start {program}: {error}")
             return f"Started {program} {' '.join(args)}".strip()
 
-        url = website_url(name)
-        if url:  # the model asked to "open" a website as if it were an app
+        url = website_url(clean_app_name(name))
+        if url:  # no installed app, but it's a website: open that instead
             webbrowser.open(url)
-            return f"Opened {url} in the web browser."
+            return f"No installed app called '{clean_app_name(name)}' was found, so I opened {url} in the web browser."
 
         if IS_WINDOWS and not args:
             # Windows can often find installed apps by name (App Paths registry).

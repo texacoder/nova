@@ -155,6 +155,80 @@ class AppToolTests(ToolTestCase):
         browser.assert_called_once_with("https://example.com")
 
 
+class InstalledAppsTests(ToolTestCase):
+    """Finding apps the way the Windows Start menu does (simulated Windows PC)."""
+
+    STORE_APPS = {
+        "Spotify": "SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify",
+        "Settings": "windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel",
+        "WordPad": "Microsoft.Windows.WordPad",
+    }
+
+    def setUp(self):
+        super().setUp()
+        start_menu = Path(self.tmp.name) / "StartMenu" / "Programs"
+        desktop = Path(self.tmp.name) / "Desktop"
+        (start_menu / "Chrome Apps").mkdir(parents=True)
+        desktop.mkdir()
+        for path in [desktop / "YouTube.lnk", start_menu / "Microsoft Word.lnk",
+                     start_menu / "Chrome Apps" / "WhatsApp Web.lnk", start_menu / "Uninstall Spotify.lnk"]:
+            path.write_text("shortcut")
+        self.youtube = str(desktop / "YouTube.lnk")
+        self.word = str(start_menu / "Microsoft Word.lnk")
+        import tools.apps as apps
+        patches = [
+            mock.patch.object(apps, "IS_WINDOWS", True),
+            mock.patch.object(apps, "shortcut_folders", return_value=[start_menu, desktop]),
+            mock.patch.object(apps, "store_apps", return_value=self.STORE_APPS),
+            mock.patch.object(apps.shutil, "which", return_value=None),
+            mock.patch.object(apps.os, "startfile", create=True),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.startfile = apps.os.startfile
+        self.tool = OpenApplication(ToolContext(self.config))
+
+    def test_opens_installed_youtube_app_instead_of_website(self):
+        for name in ("youtube", "the YouTube app", "YouTube application"):
+            with self.subTest(name=name):
+                self.assertEqual(self.tool.find_app(name), self.youtube)
+                self.assertFalse(self.tool.needs_confirmation({"name": name}))
+        with mock.patch("webbrowser.open") as browser:
+            result = self.tool.run("the YouTube app")
+        browser.assert_not_called()
+        self.startfile.assert_called_with(self.youtube)
+        self.assertIn("installed app 'youtube'", result)
+
+    def test_store_apps_open_through_the_apps_folder(self):
+        self.tool.run("spotify")
+        self.startfile.assert_called_with("shell:AppsFolder\\SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify")
+        self.tool.run("settings")
+        self.assertIn("immersivecontrolpanel", self.startfile.call_args[0][0])
+
+    def test_name_matching(self):
+        self.assertEqual(self.tool.find_app("word"), self.word)           # "Microsoft Word", not WordPad
+        self.assertIn("WordPad", self.tool.find_app("wordpad"))
+        self.assertIn("WhatsApp Web.lnk", self.tool.find_app("whatsapp"))  # found in a subfolder
+        self.assertNotIn("Uninstall", self.tool.find_app("spotify"))      # never the uninstaller
+        self.assertIsNone(self.tool.find_app("photoshop"))
+
+    def test_missing_app_falls_back_to_website_or_error(self):
+        with mock.patch("webbrowser.open") as browser:
+            result = self.tool.run("the Netflix app")
+        browser.assert_called_once_with("https://www.netflix.com")
+        self.assertIn("No installed app", result)
+        self.startfile.side_effect = OSError("The system cannot find the file specified")  # like real Windows
+        with self.assertRaises(ToolError):
+            self.tool.run("photoshop")
+
+    def test_parse_start_apps(self):
+        from tools.apps import parse_start_apps
+        self.assertEqual(parse_start_apps('[{"Name":"Spotify","AppID":"S!1"},{"Name":"","AppID":"x"}]'), {"Spotify": "S!1"})
+        self.assertEqual(parse_start_apps('{"Name":"Calculator","AppID":"C!1"}'), {"Calculator": "C!1"})
+        self.assertEqual(parse_start_apps("not json"), {})
+
+
 class PageServer(BaseHTTPRequestHandler):
     def do_GET(self):
         body = (b"<html><head><title>Test Page</title><style>.x{}</style></head><body>"
