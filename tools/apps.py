@@ -13,6 +13,7 @@ Anything else asks for your approval first.
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import webbrowser
@@ -56,6 +57,36 @@ EXECUTABLE_EXTENSIONS = {
 }
 
 
+# Websites people often ask to "open" as if they were apps.
+KNOWN_WEBSITES = {
+    "youtube": "https://www.youtube.com", "google": "https://www.google.com",
+    "gmail": "https://mail.google.com", "google drive": "https://drive.google.com",
+    "google maps": "https://maps.google.com", "maps": "https://maps.google.com",
+    "facebook": "https://www.facebook.com", "instagram": "https://www.instagram.com",
+    "twitter": "https://x.com", "x": "https://x.com", "whatsapp": "https://web.whatsapp.com",
+    "whatsapp web": "https://web.whatsapp.com", "github": "https://github.com",
+    "linkedin": "https://www.linkedin.com", "reddit": "https://www.reddit.com",
+    "wikipedia": "https://www.wikipedia.org", "netflix": "https://www.netflix.com",
+    "amazon": "https://www.amazon.com", "chatgpt": "https://chatgpt.com",
+    "outlook": "https://outlook.live.com", "stackoverflow": "https://stackoverflow.com",
+    "stack overflow": "https://stackoverflow.com",
+}
+DOMAIN = re.compile(r"^(https?://)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}(/\S*)?$", re.IGNORECASE)
+
+
+def website_url(name: str) -> str | None:
+    """If `name` is a well-known website or a web address, return its URL."""
+    text = name.strip().strip("'\"").lower()
+    for suffix in (" website", " site", " web site", ".com"):
+        if text.endswith(suffix) and text[: -len(suffix)] in KNOWN_WEBSITES:
+            text = text[: -len(suffix)]
+    if text in KNOWN_WEBSITES:
+        return KNOWN_WEBSITES[text]
+    if DOMAIN.match(text) and Path(text).suffix.lower() not in EXECUTABLE_EXTENSIONS:
+        return text if text.startswith(("http://", "https://")) else "https://" + text
+    return None
+
+
 def load_app_aliases(path: Path) -> dict[str, str]:
     """Read apps.json: {"geany": "C:/Program Files/Geany/bin/geany.exe", ...}."""
     if not path.exists():
@@ -88,8 +119,9 @@ def open_with_default_program(target: str) -> None:
 class OpenApplication(Tool):
     name = "open_application"
     description = (
-        "Open an application on the user's PC, optionally with arguments such as a file to open. "
-        "Example: name='geany', arguments=['C:/Users/me/NOVA_Workspace/hello.py']."
+        "Open an application installed on the user's PC, optionally with arguments such as a file to "
+        "open. Example: name='geany', arguments=['C:/Users/me/NOVA_Workspace/hello.py']. For websites "
+        "(YouTube, Google, any web address) use open_path with the URL instead."
     )
     parameters = {
         "type": "object",
@@ -123,10 +155,18 @@ class OpenApplication(Tool):
         return None
 
     def needs_confirmation(self, arguments: dict) -> bool:
-        key = normalise_app_name(str(arguments.get("name", "")))
-        return key not in TRUSTED_APPS and key not in self.aliases()
+        name = str(arguments.get("name", ""))
+        key = normalise_app_name(name)
+        if key in TRUSTED_APPS or key in self.aliases():
+            return False
+        # A website opens harmlessly in the browser (unless an app with that name exists).
+        return not (website_url(name) and not self.find_app(name))
 
     def describe(self, arguments: dict) -> str:
+        name = str(arguments.get("name", ""))
+        url = website_url(name)
+        if url and not self.find_app(name):
+            return f"Open website: {url}"
         args = " ".join(str(a) for a in arguments.get("arguments") or [])
         found = self.find_app(str(arguments.get("name", ""))) or arguments.get("name")
         return f"Open application: {found} {args}".strip()
@@ -147,6 +187,11 @@ class OpenApplication(Tool):
                 raise ToolError(f"Could not start {program}: {error}")
             return f"Started {program} {' '.join(args)}".strip()
 
+        url = website_url(name)
+        if url:  # the model asked to "open" a website as if it were an app
+            webbrowser.open(url)
+            return f"Opened {url} in the web browser."
+
         if IS_WINDOWS and not args:
             # Windows can often find installed apps by name (App Paths registry).
             try:
@@ -155,8 +200,8 @@ class OpenApplication(Tool):
             except OSError:
                 pass
         raise ToolError(
-            f"Could not find an app called '{name}'. Add its full path to apps.json "
-            "(see apps.example.json)."
+            f"Could not find an app called '{name}'. If it's a website, use open_path with its URL. "
+            "If it's an installed program, the user can add its full path to apps.json (see apps.example.json)."
         )
 
 

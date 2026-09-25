@@ -130,6 +130,24 @@ class AppToolTests(ToolTestCase):
         with self.assertRaises(ToolError):
             tool.run("definitely-not-an-app-xyz")
 
+    def test_websites_asked_as_apps_open_in_browser(self):
+        tool = OpenApplication(ToolContext(self.config))
+        for name, url in [("youtube", "https://www.youtube.com"), ("YouTube website", "https://www.youtube.com"),
+                          ("gmail", "https://mail.google.com"), ("github.com", "https://github.com"),
+                          ("https://example.org/page", "https://example.org/page")]:
+            with self.subTest(name=name):
+                self.assertFalse(tool.needs_confirmation({"name": name}))
+                self.assertIn(url, tool.describe({"name": name}))
+                with mock.patch("webbrowser.open") as browser:
+                    self.assertIn("in the web browser", tool.run(name))
+                browser.assert_called_once_with(url)
+
+    def test_program_names_are_not_mistaken_for_websites(self):
+        from tools.apps import website_url
+        for name in ("notepad", "notepad.exe", "geany", "setup.msi", "calc"):
+            with self.subTest(name=name):
+                self.assertIsNone(website_url(name))
+
     def test_open_url_uses_browser(self):
         tool = OpenPath(ToolContext(self.config))
         with mock.patch("webbrowser.open") as browser:
