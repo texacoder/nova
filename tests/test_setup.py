@@ -111,6 +111,62 @@ class HelperTests(unittest.TestCase):
         self.assertIn("ollama.com", str(caught.exception))
 
 
+class WindowsInstallTests(unittest.TestCase):
+    """install_ollama on Windows, with stand-ins for winget and the installer."""
+
+    def setUp(self):
+        self.progress = []
+        patches = [
+            mock.patch.object(setup, "IS_WINDOWS", True),
+            mock.patch.object(setup.subprocess, "CREATE_NO_WINDOW", 0, create=True),
+            mock.patch.object(setup.shutil, "which", return_value="winget.exe"),
+            mock.patch.object(setup.time, "sleep", lambda seconds: threading.Event().wait(0.05)),
+        ]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def notify(self, text, fraction):
+        self.progress.append(text)
+
+    def fake_winget(self, code):
+        return mock.patch.object(setup, "winget_command", return_value=[sys.executable, "-c", code])
+
+    def test_hanging_winget_is_stopped_and_installer_is_tried(self):
+        with self.fake_winget("import time; time.sleep(60)"), \
+             mock.patch.object(setup, "WINGET_TIME_LIMIT", 1), \
+             mock.patch.object(setup, "find_ollama", return_value=None), \
+             mock.patch.object(setup.urllib.request, "urlopen", side_effect=OSError("offline")):
+            started = setup.time.time()
+            with self.assertRaises(SetupError) as caught:
+                setup.install_ollama(self.notify)
+        self.assertLess(setup.time.time() - started, 15)  # no more endless waiting
+        self.assertIn("install it yourself", str(caught.exception))
+        self.assertTrue(any("0:0" in text for text in self.progress))  # elapsed time was shown
+        self.assertTrue(any("click Yes" in text for text in self.progress))
+
+    def test_continues_as_soon_as_ollama_is_installed(self):
+        found = iter([None, None, "C:/Ollama/ollama.exe"] + ["C:/Ollama/ollama.exe"] * 50)
+        with self.fake_winget("import time; time.sleep(60)"), \
+             mock.patch.object(setup, "find_ollama", side_effect=lambda: next(found)), \
+             mock.patch.object(setup, "server_running", return_value=True):
+            started = setup.time.time()
+            path = setup.install_ollama(self.notify, host="http://127.0.0.1:9")
+        self.assertEqual(path, "C:/Ollama/ollama.exe")
+        self.assertLess(setup.time.time() - started, 15)
+
+    def test_winget_success(self):
+        with self.fake_winget("print('Successfully installed')"), \
+             mock.patch.object(setup, "find_ollama", return_value="C:/Ollama/ollama.exe"):
+            self.assertEqual(setup.install_ollama(self.notify), "C:/Ollama/ollama.exe")
+
+    def test_winget_command_disables_prompts(self):
+        command = setup.winget_command("winget.exe")
+        for flag in ("--silent", "--disable-interactivity", "--accept-source-agreements",
+                     "--accept-package-agreements", "--source"):
+            self.assertIn(flag, command)
+
+
 class PullTests(FakeServerTestCase):
     def test_pull_reports_progress(self):
         state = FakeOllamaState()

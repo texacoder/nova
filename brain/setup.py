@@ -181,7 +181,62 @@ def pull_model(host: str, model: str, on_progress=None) -> None:
 
 # --- installing Ollama ---------------------------------------------------------
 
-def install_ollama(on_progress=None) -> str:
+WINGET_TIME_LIMIT = 8 * 60      # seconds before giving up on winget
+INSTALLER_TIME_LIMIT = 10 * 60  # seconds before giving up on the official installer
+
+
+def winget_command(winget: str) -> list[str]:
+    return [winget, "install", "--id", "Ollama.Ollama", "-e", "--source", "winget", "--silent",
+            "--disable-interactivity", "--accept-source-agreements", "--accept-package-agreements"]
+
+
+def installer_command(installer: Path) -> list[str]:
+    return [str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
+
+
+def _run_until_installed(command: list[str], label: str, notify, time_limit: float, host: str | None) -> str | None:
+    """
+    Run an installer, but don't wait on it blindly: finish as soon as Ollama is
+    installed (or its server answers), and stop the installer if it takes longer
+    than `time_limit` seconds. Returns the path to ollama, or None.
+    """
+    output_log = Path(tempfile.gettempdir()) / "nova_ollama_install.log"
+    flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if IS_WINDOWS else {}
+    try:
+        with open(output_log, "w", encoding="utf-8", errors="replace") as output:
+            process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=output,
+                                       stderr=subprocess.STDOUT, **flags)
+    except OSError as error:
+        log.warning("Could not start %s: %s", command[0], error)
+        return None
+
+    started = time.time()
+    while True:
+        elapsed = time.time() - started
+        finished = process.poll() is not None
+        path = find_ollama()
+        if path and (finished or (host and server_running(host))):
+            break  # installed; a still-running installer can finish on its own
+        if finished:
+            break
+        if elapsed > time_limit:
+            log.warning("%s took over %s seconds; stopping it", label, time_limit)
+            process.kill()
+            break
+        minutes, seconds = divmod(int(elapsed), 60)
+        notify(f"{label} ({minutes}:{seconds:02d})... If Windows asks for permission, click Yes "
+               "(the prompt may be hidden behind other windows; check the taskbar).", None)
+        time.sleep(2)
+
+    try:
+        log.info("%s exit code %s. Output:\n%s", label, process.poll(),
+                 output_log.read_text(encoding="utf-8", errors="replace")[-3000:])
+    except OSError:
+        pass
+    return find_ollama()
+
+
+def install_ollama(on_progress=None, host: str | None = None) -> str:
     """Install Ollama and return the path to the program."""
     if not IS_WINDOWS:
         raise SetupError(
@@ -192,16 +247,11 @@ def install_ollama(on_progress=None) -> str:
     notify = on_progress or (lambda text, fraction: None)
     winget = shutil.which("winget")
     if winget:
-        notify("Installing Ollama with winget (this can take a few minutes)...", None)
-        result = subprocess.run(
-            [winget, "install", "--id", "Ollama.Ollama", "-e", "--silent",
-             "--accept-source-agreements", "--accept-package-agreements"],
-            capture_output=True, text=True, errors="replace", timeout=1800,
-        )
-        log.info("winget exit %s: %s %s", result.returncode, result.stdout[-2000:], result.stderr[-2000:])
-        path = find_ollama()
+        path = _run_until_installed(winget_command(winget), "Installing Ollama with winget",
+                                    notify, WINGET_TIME_LIMIT, host)
         if path:
             return path
+        log.info("winget didn't install Ollama; trying the official installer")
 
     notify("Downloading the Ollama installer from ollama.com...", None)
     installer = Path(tempfile.gettempdir()) / "OllamaSetup.exe"
@@ -214,13 +264,18 @@ def install_ollama(on_progress=None) -> str:
                 done += len(chunk)
                 notify("Downloading the Ollama installer...", done / total if total else None)
     except (urllib.error.URLError, OSError) as error:
-        raise SetupError(f"Could not download Ollama: {error}. Install it from https://ollama.com/download") from error
+        raise SetupError(
+            f"Could not download Ollama ({error}). Please install it yourself from "
+            "https://ollama.com/download, then click Try again."
+        ) from error
 
-    notify("Running the Ollama installer...", None)
-    subprocess.run([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"], timeout=1800)
-    path = find_ollama()
+    path = _run_until_installed(installer_command(installer), "Running the Ollama installer",
+                                notify, INSTALLER_TIME_LIMIT, host)
     if not path:
-        raise SetupError("Ollama didn't install correctly. Please install it from https://ollama.com/download")
+        raise SetupError(
+            "Ollama didn't finish installing. Please install it yourself from "
+            "https://ollama.com/download (run OllamaSetup.exe), then click Try again."
+        )
     return path
 
 
@@ -316,7 +371,7 @@ class SetupManager:
                 path = find_ollama()
                 if not path:
                     self._update(message="Installing Ollama (the free engine that runs NOVA's brain)...")
-                    path = install_ollama(self._progress)
+                    path = install_ollama(self._progress, host)
                 self._update(message="Starting the AI engine...", progress=None)
                 if not server_running(host):
                     start_server(path, host)
