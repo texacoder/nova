@@ -1,0 +1,13 @@
+# Local settings (may contain personal values)
+.env
+
+# NOVA's local data: memory database and logs
+data/*
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
