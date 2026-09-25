@@ -13,7 +13,6 @@ def make_config(tmp_dir: str, **overrides):
         "NOVA_DATA_DIR": str(Path(tmp_dir) / "data"),
         "NOVA_WORKSPACE": str(Path(tmp_dir) / "workspace"),
         "NOVA_APPS_FILE": str(Path(tmp_dir) / "apps.json"),
-        "NOVA_BRAIN": "mock",
     }
     environ.update(overrides)
     return load_config(env_file=Path(tmp_dir) / "missing.env", environ=environ)

@@ -8,9 +8,11 @@
 - **Learns from the internet:** researches a topic and saves what it learned, with sources, to a permanent knowledge base.
 - **Email:** reads your inbox and sends mail (Gmail or any IMAP/SMTP provider).
 - **Remembers you:** facts about you persist across restarts.
+- **Improves itself:** learns lessons from your corrections and follows them from then on.
+- **Sets up its own brain:** installs the AI engine and downloads the right model for your PC in one click.
 - **Asks before risky actions:** sending email, running commands, touching files outside its own folder.
 
-**Cost: zero.** The AI model runs locally through [Ollama](https://ollama.com), which is free and open source. Web search uses DuckDuckGo and Wikipedia (no API keys), and email uses your own account. NOVA uses only Python's standard library, so there is nothing to `pip install`.
+**Cost: zero.** NOVA's brain is a free, open AI model (Qwen 2.5) that runs **on your PC** through [Ollama](https://ollama.com), which is also free and open source. Nothing you say leaves your computer, except web searches and email you ask for. Web search uses DuckDuckGo and Wikipedia (no API keys), and email uses your own account. NOVA uses only Python's standard library, so there is nothing to `pip install`.
 
 > Claude Code was used to *develop* NOVA. It is not part of NOVA and NOVA doesn't use it.
 
@@ -18,60 +20,54 @@
 
 ## Quick start (Windows)
 
-### 1. Install the free programs
+### 1. Install Python
 
-1. **Python 3.10+** from https://www.python.org/downloads/. In the installer, tick **"Add python.exe to PATH"**.
-2. **Ollama** from https://ollama.com/download. After installing it, it runs in the background (look for the llama icon in the system tray).
-3. **Git** (optional) from https://git-scm.com/download/win. You can download NOVA as a ZIP instead.
+Download **Python 3.10+** from https://www.python.org/downloads/. In the installer, tick **"Add python.exe to PATH"**.
 
-### 2. Download a model
+### 2. Get NOVA
 
-Open **PowerShell** and pull a model that supports *tools*. NOVA needs this to take actions. Pick one based on your PC:
-
-| Your PC | Command | Size |
-|---|---|---|
-| 16 GB+ RAM or a GPU with 8 GB+ (best) | `ollama pull qwen2.5:7b` | ~4.7 GB |
-| 8–16 GB RAM | `ollama pull qwen2.5:3b` | ~1.9 GB |
-| Alternative | `ollama pull llama3.1:8b` | ~4.9 GB |
-
-Check it's there with `ollama list`.
-
-### 3. Get NOVA and configure it
+With Git:
 
 ```powershell
 cd $HOME\Documents
 git clone -b claude/laughing-bardeen-mjzwe3 https://github.com/texacoder/nova.git
-cd nova
-Copy-Item .env.example .env
-notepad .env
 ```
 
-In `.env`, set the model you pulled:
+Or download the branch as a ZIP from GitHub and extract it.
 
-```
-OLLAMA_MODEL=qwen2.5:7b
-```
+### 3. Start NOVA
 
-### 4. Start NOVA
-
-Double-click **`start_nova.bat`**, or run:
-
-```powershell
-py main.py
-```
+Open the `nova` folder and double-click **`start_nova.bat`**, or run `py main.py`.
 
 Your browser opens NOVA at http://127.0.0.1:8765. Keep the black console window open; closing it stops NOVA.
 
-Other ways to start it:
+### 4. First run: let NOVA set up its brain
+
+On first start NOVA shows **"Brain offline"** with a **Set up NOVA's brain** button. Click it and NOVA:
+
+1. installs **Ollama**, the free engine that runs AI models (using `winget`, or the official installer if winget isn't available),
+2. picks the best model for your PC's memory:
+
+   | Your RAM | Model it downloads | Download size |
+   |---|---|---|
+   | 16 GB or more | `qwen2.5:7b` | ~4.7 GB |
+   | 8–15 GB | `qwen2.5:3b` | ~1.9 GB |
+   | less than 8 GB | `qwen2.5:1.5b` | ~1 GB |
+
+3. downloads it with a progress bar and saves the choice in `.env`.
+
+This happens once. After that NOVA starts with its brain ready. If Ollama is already installed with a suitable model, NOVA just uses it.
+
+In terminal mode (`py main.py --cli`) NOVA asks `Set it up now? [Y/n]` instead. You can rerun setup any time with `/setup`.
+
+**Prefer to do it by hand?** Install Ollama from https://ollama.com/download, run `ollama pull qwen2.5:7b`, and set `OLLAMA_MODEL=qwen2.5:7b` in `.env`.
+
+Other ways to start NOVA:
 
 ```powershell
 py main.py --cli          # terminal only, no browser
 py main.py --no-browser   # start the web server without opening a browser
 ```
-
-**No model yet?** Set `NOVA_BRAIN=mock` in `.env` to try the interface and tools with a simple fake brain. It understands only fixed phrases like `search python`, `open notepad`, `what time is it?`, and `list files`. Its replies start with `[mock]`.
-
----
 
 ## What you can say
 
@@ -86,6 +82,7 @@ Check my latest 5 emails
 Send an email to friend@example.com saying I'll be late tonight
 How much free disk space do I have?
 Remember that my store is called EXORASTORE
+From now on, always add comments to code you write      ← NOVA learns this as a lesson
 ```
 
 When NOVA wants to do something risky, an **Authorisation required** box appears showing exactly what it will do, such as the full command or the full email. Nothing happens until you click **Approve**.
@@ -99,10 +96,12 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `/help` | Show help |
 | `/remember <fact>` | Save a fact to long-term memory |
 | `/memories` | List saved memories |
-| `/forget <id>` | Delete a memory; `/forget K3` deletes knowledge #K3 |
+| `/forget <id>` | Delete a memory; `/forget K3` deletes knowledge #K3, `/forget L2` deletes lesson #L2 |
 | `/clear_memory` | Delete all memories (asks you to type `yes`) |
 | `/learn <topic>` | Research a topic online and save the result |
 | `/knowledge` | List what NOVA has learned |
+| `/lessons` | List lessons NOVA learned about how you want it to work |
+| `/setup` | Install or repair NOVA's brain automatically |
 | `/tools` | List NOVA's abilities and which ones ask first |
 | `/new` | Start a fresh conversation (memories are kept) |
 | `/status` | Brain, memory, email, and workspace status |
@@ -116,6 +115,7 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `fetch_webpage` | Read a web page's text | no |
 | `learn_topic` | Search, read 3 pages, summarize, and save to the knowledge base | no |
 | `save_knowledge`, `remember`, `recall` | Manage long-term memory and knowledge | no |
+| `learn_lesson` | Save a lesson about how to work for you (after corrections or preferences) | no |
 | `get_datetime`, `system_info` | Date/time, OS, CPU, disk space | no |
 | `list_directory`, `read_file` | Browse and read files | only outside the workspace |
 | `write_file` | Create or edit text/code files | only outside the workspace |
@@ -162,13 +162,16 @@ For Outlook or other providers, also set `SMTP_HOST`, `SMTP_PORT`, and `IMAP_HOS
 
 ## How memory and learning work
 
-NOVA has three kinds of memory, all stored locally in `data/nova.db` (SQLite):
+NOVA has four kinds of memory, all stored locally in `data/nova.db` (SQLite):
 
 1. **Conversation:** the current chat, kept in RAM and cleared on exit or `/new`.
 2. **Memories:** facts about you. They're saved when you use `/remember` or when NOVA decides something is worth remembering.
 3. **Knowledge:** what NOVA learned from the internet with `/learn` or `learn_topic`, stored with the source URLs.
+4. **Lessons:** how you want NOVA to behave. When you correct it ("don't explain so much", "my Geany is on D:"), NOVA saves a lesson and follows it in every future conversation.
 
-On each message, NOVA adds your memories and the most relevant knowledge to what it sends the model.
+On each message, NOVA adds your memories, all lessons, and the most relevant knowledge to what it sends the model.
+
+You can also change NOVA's core personality by editing `personality/nova.txt`. Changes apply on the next message, with no restart needed.
 
 **Honest note on "learning":** the AI model itself isn't retrained; that would need expensive hardware. NOVA learns the way a person keeps notes: it researches, writes a summary, and looks the summary up later. This is free, and you can inspect it (`/knowledge`) and correct it (`/forget K<id>`).
 
@@ -187,8 +190,7 @@ All settings live in `.env`; see `.env.example` for descriptions. The most usefu
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `OLLAMA_MODEL` | *(empty)* | Model to use, e.g. `qwen2.5:7b` |
-| `NOVA_BRAIN` | `ollama` | `ollama` or `mock` |
+| `OLLAMA_MODEL` | *(set by automatic setup)* | Model to use, e.g. `qwen2.5:7b` |
 | `OLLAMA_NUM_CTX` | `8192` | Context size. Lower it (4096) if replies are slow |
 | `OLLAMA_TIMEOUT` | `300` | Seconds to wait for the model |
 | `NOVA_WORKSPACE` | `~/NOVA_Workspace` | NOVA's own folder |
@@ -200,8 +202,9 @@ All settings live in `.env`; see `.env.example` for descriptions. The most usefu
 
 | Problem | Fix |
 |---|---|
-| "Cannot reach Ollama" | Start Ollama from the Start menu, or run `ollama serve` in another window |
-| "Model ... is not installed" | Run `ollama pull <model>` using the exact name in `OLLAMA_MODEL` |
+| "Brain offline" / "Cannot reach Ollama" | Click **Set up NOVA's brain** or type `/setup`. NOVA starts Ollama itself if it's installed |
+| Automatic setup fails | Install Ollama from https://ollama.com/download, then click **Try again** |
+| "Model ... is not installed" | Type `/setup`, or run `ollama pull <model>` using the exact name in `OLLAMA_MODEL` |
 | NOVA chats but never takes actions | Your model doesn't support tools. Use `qwen2.5:7b` or `llama3.1:8b` (`/status` warns about this) |
 | Very slow replies | Use a smaller model (`qwen2.5:3b`) or set `OLLAMA_NUM_CTX=4096` |
 | "Could not find an app" | Add it to `apps.json` (see above) |
@@ -220,7 +223,7 @@ nova/
 ├── brain/               # The AI model layer (swappable)
 │   ├── base.py          #   Brain interface: chat(messages, tools) + health_check()
 │   ├── local.py         #   Ollama adapter (native tool calling)
-│   └── mock.py          #   Fake brain for testing without a model
+│   └── setup.py         #   Automatic setup: install Ollama, choose + download model
 ├── tools/               # NOVA's abilities
 │   ├── base.py          #   Tool class, registry, approval rules
 │   ├── web.py           #   web_search, fetch_webpage
@@ -258,11 +261,13 @@ You ─► Web UI / CLI ─► Agent ─► Brain (Ollama)
 py -m unittest discover -s tests -t . -v
 ```
 
-The tests don't need Ollama or internet access; they use fake servers and temporary folders.
+The tests don't need Ollama or internet access; they use fake servers, a scripted stand-in brain (`tests/mock_brain.py`, used only by tests), and temporary folders.
 
 ## Future ideas
 
 v1.0 covers the core. Natural next steps, all still free:
+
+- Self-coding: NOVA writes, tests, and installs new skills (Python tools) for itself, and can propose changes to its own code with automatic tests and rollback
 
 - Fully offline voice (Whisper for speech-to-text, Piper for text-to-speech) and a wake word
 - Smarter memory search with local embeddings (Ollama `nomic-embed-text`)

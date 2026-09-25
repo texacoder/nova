@@ -1,8 +1,9 @@
 """
-MockBrain: a tiny rule-based stand-in for a real model.
+MockBrain: a tiny rule-based stand-in for a real model, used ONLY by the tests.
 
-It lets you run and test NOVA (including the UI and tools) with no AI model
-installed. It is NOT intelligent. It understands a few fixed phrases:
+NOVA itself always uses a real local model. This fake brain lets the test
+suite exercise the agent, tools and UI without a model. It understands a few
+fixed phrases:
 
     hello                       -> greeting
     search <something>          -> web_search tool
@@ -11,8 +12,6 @@ installed. It is NOT intelligent. It understands a few fixed phrases:
     what time is it / date      -> get_datetime tool
     list files                  -> list_directory tool
     any other question          -> looks for a matching memory or earlier message
-
-Every reply starts with [mock] so you always know it's not a real model.
 """
 
 import re

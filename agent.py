@@ -18,11 +18,14 @@ import platform
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from brain.base import Brain, BrainError, ToolCall
+from brain.base import Brain, BrainError, BrainUnavailableError, ToolCall
+from brain.local import LocalBrain
+from brain.setup import SetupManager
 from config import Config
 from memory.conversation import ConversationMemory
 from memory.database import MemoryStore, MemoryStoreError
 from tools import Tool, ToolContext, ToolError, create_registry
+from personality import load_personality
 from tools.knowledge import learn_topic
 from utils.logger import get_logger
 from utils.text import truncate
@@ -36,20 +39,23 @@ HELP_TEXT = """Commands:
   /help               Show this help
   /remember <fact>    Save a fact to long-term memory
   /memories           List saved memories
-  /forget <id>        Delete a memory (or K<id> for knowledge, e.g. /forget K2)
+  /forget <id>        Delete a memory (K<id> = knowledge, L<id> = lesson)
   /clear_memory       Delete ALL memories (asks for confirmation)
   /learn <topic>      Research a topic online and save what NOVA learns
   /knowledge          List what NOVA has learned
+  /lessons            List lessons NOVA learned about how to work for you
   /tools              List NOVA's abilities
   /new                Start a fresh conversation (memories are kept)
   /status             Show NOVA's current status
+  /setup              Install/repair NOVA's brain automatically
   /exit               Quit NOVA
 
 Anything else is sent to NOVA. Examples:
   search the latest Python release
   write a hello world Python script and open it in Geany
   learn about solar panels
-  check my latest emails"""
+  check my latest emails
+  from now on, always answer in short bullet points   (NOVA learns this lesson)"""
 
 
 @dataclass
@@ -93,6 +99,10 @@ class Agent:
         self._steps: list[dict] = []         # tools that ran this turn
         self._rounds = 0                     # brain calls this turn
         self._awaiting_clear_confirmation = False
+        # Automatic brain installer (only for the real local brain).
+        self.setup = SetupManager(brain, config.env_file) if isinstance(brain, LocalBrain) else None
+        # Remember the personality file's timestamp so edits are picked up live.
+        self._personality_mtime = self._mtime(config.personality_file)
 
         self.commands = {
             "/help": self._cmd_help,
@@ -102,6 +112,8 @@ class Agent:
             "/clear_memory": self._cmd_clear_memory,
             "/learn": self._cmd_learn,
             "/knowledge": self._cmd_knowledge,
+            "/lessons": self._cmd_lessons,
+            "/setup": self._cmd_setup,
             "/tools": self._cmd_tools,
             "/new": self._cmd_new,
             "/status": self._cmd_status,
@@ -186,7 +198,13 @@ class Agent:
             if not self._steps and self.conversation.messages[-1:] and \
                     self.conversation.messages[-1]["role"] == "user":
                 self.conversation.remove_last()  # nothing happened; forget the message
-            return AgentReply(f"My brain is unavailable right now.\n{error}", self._steps)
+            if isinstance(error, BrainUnavailableError) and self.setup:
+                return AgentReply(
+                    "My brain (the local AI model) isn't ready yet. Type /setup and I'll install and "
+                    f"start it automatically.\n\nDetails: {error.args[0].splitlines()[0]}", self._steps)
+            if isinstance(error, BrainUnavailableError):
+                return AgentReply(f"My brain is unavailable right now.\n{error}", self._steps)
+            return AgentReply(f"My brain ran into a problem: {error}", self._steps)
         except MemoryStoreError as error:
             return AgentReply(str(error), self._steps)
 
@@ -230,7 +248,13 @@ class Agent:
         history = self.conversation.get_messages()
         latest_question = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
 
+        self._reload_personality_if_changed()
         sections = [self.personality, self._situation()]
+
+        lessons = self.memory_store.list_lessons()
+        if lessons:
+            sections.append("Lessons you have learned about working for this user (always follow them):\n" +
+                            "\n".join(f"- [L{lesson.id}] {lesson.content}" for lesson in lessons[-40:]))
 
         limit = self.config.max_memories_in_prompt
         if limit > 0:
@@ -249,6 +273,20 @@ class Agent:
                 for k in knowledge))
 
         return [{"role": "system", "content": "\n\n".join(sections)}] + history
+
+    @staticmethod
+    def _mtime(path) -> float:
+        try:
+            return path.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def _reload_personality_if_changed(self) -> None:
+        mtime = self._mtime(self.config.personality_file)
+        if mtime and mtime != self._personality_mtime:
+            self._personality_mtime = mtime
+            self.personality = load_personality(self.config.personality_file, self.config.name, self.config.version)
+            log.info("Personality file changed; reloaded")
 
     def _situation(self) -> str:
         tools_note = ("You can act using your tools." if self.brain.supports_tools
@@ -282,12 +320,16 @@ class Agent:
 
     def _cmd_forget(self, argument: str) -> str:
         arg = argument.strip().upper()
+        if arg.startswith("L") and arg[1:].isdigit():
+            if self.memory_store.delete_lesson(int(arg[1:])):
+                return f"Forgotten lesson #{arg}."
+            return f"There is no lesson #{arg}."
         if arg.startswith("K") and arg[1:].isdigit():
             if self.memory_store.delete_knowledge(int(arg[1:])):
                 return f"Forgotten knowledge #{arg}."
             return f"There is no knowledge #{arg}."
         if not arg.isdigit():
-            return "Usage: /forget <id>   or   /forget K<id>   (see /memories and /knowledge)"
+            return "Usage: /forget <id>, /forget K<id> or /forget L<id>   (see /memories, /knowledge, /lessons)"
         if self.memory_store.delete(int(arg)):
             return f"Forgotten memory #{arg}."
         return f"There is no memory #{arg}."
@@ -320,6 +362,20 @@ class Agent:
         lines = [f"  [K{k.id}] {k.topic}: {truncate(' '.join(k.content.split()), 120)}" for k in items]
         return f"Knowledge base ({len(items)}):\n" + "\n".join(lines)
 
+    def _cmd_lessons(self, _argument: str) -> str:
+        lessons = self.memory_store.list_lessons()
+        if not lessons:
+            return ("No lessons yet. Correct me or tell me how you like things done "
+                    "(e.g. 'from now on, keep answers short') and I'll learn it.")
+        return f"Lessons ({len(lessons)}):\n" + "\n".join(f"  [L{x.id}] {x.content}" for x in lessons)
+
+    def _cmd_setup(self, _argument: str) -> str:
+        if not self.setup:
+            return "Automatic setup is only available for the local Ollama brain."
+        if self.setup.start():
+            return "Setting up my brain in the background. Progress is shown in the setup panel."
+        return "Setup is already running."
+
     def _cmd_tools(self, _argument: str) -> str:
         lines = []
         for name in self.tools.names():
@@ -351,6 +407,7 @@ class Agent:
             "Tools": f"{len(self.tools)}" + ("" if self.brain.supports_tools else " (model can't use tools)"),
             "Memories": f"{self.memory_store.count()} saved",
             "Knowledge": f"{self.memory_store.count_knowledge()} topics learned",
+            "Lessons": f"{len(self.memory_store.list_lessons())} learned",
             "Conversation": f"{len(self.conversation)} messages this session",
             "Email": self.config.email_address if self.config.email_configured else "not configured",
             "Workspace": str(self.config.workspace),

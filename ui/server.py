@@ -7,6 +7,8 @@ It serves the page in ui/static/ and a JSON API the page talks to:
     GET  /api/memories   -> saved memories and learned knowledge
     POST /api/message    -> {"text": "..."}      send a message / command
     POST /api/confirm    -> {"approve": true}     answer a pending approval
+    GET  /api/setup      -> progress of the automatic brain setup
+    POST /api/setup      -> start the automatic brain setup
 
 Security:
   - It only listens on 127.0.0.1 (your own PC), not the network.
@@ -72,6 +74,12 @@ class NovaWebServer:
 
     def _api(self, method: str, path: str, body: dict) -> dict:
         agent = self.agent
+        if path == "/api/setup":  # outside the lock: must answer while NOVA is busy
+            if agent.setup is None:
+                return {"available": False, "state": "unavailable", "message": "Automatic setup is not available."}
+            if method == "POST":
+                agent.setup.start()
+            return {"available": True, **agent.setup.snapshot()}
         with self.lock:
             if method == "GET" and path == "/api/status":
                 status = agent.status()

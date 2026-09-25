@@ -46,6 +46,9 @@ WINDOWS_LOCATIONS = {
     "paint": [r"%SystemRoot%\System32\mspaint.exe"],
 }
 
+# Apps NOVA opened keep running on their own; keeping a reference stops Python warning about them.
+_launched: list = []
+
 # Opening these with the default program would *run* them, so always ask.
 EXECUTABLE_EXTENSIONS = {
     ".exe", ".bat", ".cmd", ".com", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".msi",
@@ -77,9 +80,9 @@ def open_with_default_program(target: str) -> None:
     if IS_WINDOWS:
         os.startfile(target)  # noqa: only exists on Windows
     elif platform.system() == "Darwin":
-        subprocess.Popen(["open", target])
+        _launched.append(subprocess.Popen(["open", target]))
     else:
-        subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _launched.append(subprocess.Popen(["xdg-open", target], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
 
 
 class OpenApplication(Tool):
@@ -138,8 +141,8 @@ class OpenApplication(Tool):
             else:
                 flags["start_new_session"] = True
             try:
-                subprocess.Popen([program, *args], stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **flags)
+                _launched.append(subprocess.Popen([program, *args], stdin=subprocess.DEVNULL,
+                                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **flags))
             except OSError as error:
                 raise ToolError(f"Could not start {program}: {error}")
             return f"Started {program} {' '.join(args)}".strip()

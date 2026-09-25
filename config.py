@@ -18,7 +18,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 
 # Brains NOVA knows how to create. See brain/__init__.py.
-SUPPORTED_BRAINS = ("ollama", "mock")
+SUPPORTED_BRAINS = ("ollama",)
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 DEFAULTS = {
@@ -88,6 +88,8 @@ class Config:
     smtp_host: str
     smtp_port: int
     imap_host: str
+    # The .env file these settings came from (brain setup saves the chosen model there).
+    env_file: Path = PROJECT_ROOT / ".env"
 
     @property
     def db_path(self) -> Path:
@@ -220,4 +222,5 @@ def load_config(env_file: Path | None = None, environ: dict | None = None) -> Co
         smtp_host=settings["SMTP_HOST"].strip(),
         smtp_port=_to_int(settings, "SMTP_PORT", minimum=1),
         imap_host=settings["IMAP_HOST"].strip(),
+        env_file=env_file,
     )

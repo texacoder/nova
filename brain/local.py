@@ -25,7 +25,7 @@ SETUP_HINT = (
     "  1. Install Ollama from https://ollama.com\n"
     "  2. Pull a model that supports tools, e.g.:  ollama pull qwen2.5:7b\n"
     "  3. Set OLLAMA_MODEL=qwen2.5:7b in your .env file\n"
-    "Or set NOVA_BRAIN=mock in .env to test NOVA without a model."
+    "NOVA can do all of this for you: use the 'Set up brain' button or type /setup."
 )
 
 

@@ -5,7 +5,8 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from brain import Brain, BrainError, BrainUnavailableError, LocalBrain, MockBrain, create_brain
+from brain import Brain, BrainError, BrainUnavailableError, LocalBrain, create_brain
+from tests.mock_brain import MockBrain
 from brain.local import extract_text_tool_call
 from tests.helpers import make_config, temp_dir
 
@@ -27,7 +28,6 @@ class BrainInterfaceTests(unittest.TestCase):
 
     def test_factory(self):
         with temp_dir() as tmp:
-            self.assertIsInstance(create_brain(make_config(tmp, NOVA_BRAIN="mock")), MockBrain)
             brain = create_brain(make_config(tmp, NOVA_BRAIN="ollama", OLLAMA_MODEL="m", OLLAMA_NUM_CTX="4096"))
             self.assertIsInstance(brain, LocalBrain)
             self.assertEqual(brain.num_ctx, 4096)

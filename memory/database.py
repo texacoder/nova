@@ -4,9 +4,10 @@ Persistent long-term memory stored in SQLite.
 SQLite is built into Python and keeps everything in one local file
 (data/nova.db by default). Tables are created automatically.
 
-Two tables:
+Three tables:
   memories  - facts about you ("My store is called EXORASTORE.")
   knowledge - things NOVA learned from the internet, with their sources
+  lessons   - how NOVA should behave, learned from your corrections
 
 The MemoryStore class is the only place that touches the database, so a
 smarter search (e.g. semantic/vector search) can be added later behind the
@@ -37,6 +38,11 @@ CREATE TABLE IF NOT EXISTS knowledge (
     topic      TEXT    NOT NULL,
     content    TEXT    NOT NULL,
     source     TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lessons (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    content    TEXT    NOT NULL,
     created_at TEXT    NOT NULL
 );
 """
@@ -184,3 +190,22 @@ class MemoryStore:
 
     def count_knowledge(self) -> int:
         return self._run("SELECT COUNT(*) AS n FROM knowledge")[0]["n"]
+
+    # --- lessons (how NOVA should behave) -----------------------------------
+
+    def add_lesson(self, content: str) -> Memory:
+        content = content.strip()
+        if not content:
+            raise ValueError("A lesson cannot be empty")
+        created_at = _now()
+        self._run("INSERT INTO lessons (content, created_at) VALUES (?, ?)", (content, created_at))
+        log.info("Saved lesson #%s", self._last_id)
+        return Memory(self._last_id, content, created_at)
+
+    def list_lessons(self) -> list[Memory]:
+        rows = self._run("SELECT id, content, created_at FROM lessons ORDER BY id")
+        return [Memory(**dict(row)) for row in rows]
+
+    def delete_lesson(self, lesson_id: int) -> bool:
+        self._run("DELETE FROM lessons WHERE id = ?", (lesson_id,))
+        return self._last_rowcount > 0

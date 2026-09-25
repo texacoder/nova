@@ -179,6 +179,10 @@ function handleReply(reply) {
   }
   addMessage("nova", reply.text, reply.steps);
   if (reply.text) speak(reply.text);
+  if (reply.text && reply.text.startsWith("Setting up my brain")) {
+    showSetupCard(true);
+    pollSetup();
+  }
   if (reply.exit) {
     addMessage("system", "NOVA has shut down. You can close this tab.");
     setState("offline", "Shut down");
@@ -208,6 +212,68 @@ async function refreshStatus() {
     setState("offline", "Cannot reach NOVA");
     return null;
   }
+}
+
+// ---------- automatic brain setup ----------
+
+let setupPolling = false;
+
+function showSetupCard(show) {
+  $("setup").hidden = !show;
+}
+
+function renderSetup(data) {
+  const card = $("setup");
+  const bar = $("setup-bar");
+  const progress = $("setup-progress");
+  const button = $("setup-btn");
+  if (data.state === "running") {
+    card.className = "setup-card working";
+    card.querySelector("h2").textContent = "Setting up brain";
+    $("setup-text").textContent = data.message || "Working...";
+    progress.hidden = false;
+    const known = typeof data.progress === "number";
+    progress.classList.toggle("indeterminate", !known);
+    bar.style.width = known ? Math.round(data.progress * 100) + "%" : "";
+    button.hidden = true;
+    setState("thinking", "Installing brain");
+  } else if (data.state === "error") {
+    card.className = "setup-card";
+    card.querySelector("h2").textContent = "Setup problem";
+    $("setup-text").textContent = data.message;
+    progress.hidden = true;
+    button.hidden = false;
+    button.textContent = "Try again";
+  }
+}
+
+async function pollSetup() {
+  if (setupPolling) return;
+  setupPolling = true;
+  try {
+    while (true) {
+      const data = await api("/api/setup");
+      if (data.state === "done") {
+        showSetupCard(false);
+        addMessage("nova", data.message + " I'm fully online now. How can I help?");
+        break;
+      }
+      renderSetup(data);
+      if (data.state !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  } catch (error) {
+    addMessage("system", "Lost contact with NOVA during setup: " + error.message);
+  } finally {
+    setupPolling = false;
+    refreshStatus();
+  }
+}
+
+async function startSetup() {
+  $("setup-btn").hidden = true;
+  await api("/api/setup", {});
+  pollSetup();
 }
 
 // ---------- voice ----------
@@ -300,6 +366,7 @@ document.querySelectorAll(".quick button").forEach((button) => {
   button.addEventListener("click", () => send(button.dataset.cmd));
 });
 $("approve").addEventListener("click", () => answerApproval(true));
+$("setup-btn").addEventListener("click", startSetup);
 $("deny").addEventListener("click", () => answerApproval(false));
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("confirm").hidden) answerApproval(false);
@@ -315,8 +382,10 @@ document.addEventListener("keydown", (event) => {
   if (data.brain_ok) {
     addMessage("nova", `${name} online. How can I help?`);
   } else {
-    addMessage("system", `${name} is running, but the brain is not ready:\n${data.status["Brain status"]}\n\n` +
-      "Commands like /remember, /learn and /help still work. See README → 'Connecting the local brain'.");
+    showSetupCard(true);
+    const setup = await api("/api/setup").catch(() => null);
+    if (setup && setup.state === "running") pollSetup();
+    else if (setup && setup.state === "error") renderSetup(setup);
   }
   if (data.pending) {
     handleReply({ pending: data.pending, steps: [], text: "" });

@@ -7,7 +7,7 @@ import threading
 import unittest
 
 from agent import Agent
-from brain.mock import MockBrain
+from tests.mock_brain import MockBrain
 from memory import MemoryStore
 from tests.helpers import make_config, temp_dir
 from ui.server import NovaWebServer
@@ -91,6 +91,11 @@ class WebServerTests(unittest.TestCase):
         reply = json.loads(self.request("POST", "/api/confirm", {"approve": False})[1])
         self.assertIsNone(reply["pending"])
         self.assertEqual(reply["steps"][-1]["status"], "declined")
+
+    def test_setup_endpoint(self):
+        data = json.loads(self.request("GET", "/api/setup")[1])
+        self.assertFalse(data["available"])  # the fake brain can't be installed
+        self.assertEqual(self.request("POST", "/api/setup", {}, token=False)[0], 403)
 
     def test_bad_requests(self):
         self.assertEqual(self.request("GET", "/api/nothing")[0], 404)

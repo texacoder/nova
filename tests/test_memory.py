@@ -76,6 +76,14 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertTrue(self.store.delete_knowledge(entry.id))
         self.assertEqual(self.store.count_knowledge(), 1)
 
+    def test_lessons(self):
+        lesson = self.store.add_lesson("Always answer in bullet points.")
+        self.assertEqual([x.content for x in self.store.list_lessons()], ["Always answer in bullet points."])
+        self.assertTrue(self.store.delete_lesson(lesson.id))
+        self.assertEqual(self.store.list_lessons(), [])
+        with self.assertRaises(ValueError):
+            self.store.add_lesson(" ")
+
     def test_corrupted_database_gives_friendly_error(self):
         bad = Path(self.tmp.name) / "corrupt.db"
         bad.write_bytes(b"this is not a sqlite database" * 100)

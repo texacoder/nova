@@ -1,4 +1,4 @@
-"""Small text helpers used by memory search and the mock brain."""
+"""Small text helpers used by memory and knowledge search."""
 
 import re
 

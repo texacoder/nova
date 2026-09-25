@@ -1,12 +1,13 @@
 """Tests for the agent: commands, context, the tool loop and approvals."""
 
+import os
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from agent import Agent
 from brain.base import Brain, BrainReply, BrainStatus, BrainUnavailableError, ToolCall
-from brain.mock import MockBrain
+from tests.mock_brain import MockBrain
 from memory import MemoryStore
 from tests.helpers import ScriptedBrain, make_config, temp_dir
 
@@ -87,6 +88,26 @@ class ConversationTests(AgentTestCase):
         self.assertEqual(len(agent.conversation), 0)  # unanswered message not kept
         self.assertIn("I'll remember", agent.handle("/remember still works").text)
 
+    def test_lessons_are_followed_in_system_prompt(self):
+        brain = ScriptedBrain(call("learn_lesson", lesson="Always reply in French."), BrainReply("D'accord."))
+        agent = self.new_agent(brain)
+        agent.handle("From now on, reply in French.")
+        agent.handle("Hello")
+        self.assertIn("Always reply in French.", brain.calls[-1][0][0]["content"])
+        self.assertIn("[L1]", agent.handle("/lessons").text)
+        self.assertIn("Forgotten lesson", agent.handle("/forget L1").text)
+
+    def test_personality_file_edits_apply_live(self):
+        personality = Path(self.tmp.name) / "persona.txt"
+        personality.write_text("You are {name}, version one.")
+        config = make_config(self.tmp.name, NOVA_PERSONALITY_FILE=str(personality))
+        brain = ScriptedBrain()
+        agent = self.new_agent(brain, config)
+        personality.write_text("You are {name}, now with a British accent.")
+        os.utime(personality, (1, 1))  # make sure the timestamp differs
+        agent.handle("hi")
+        self.assertIn("NOVA, now with a British accent.", brain.calls[-1][0][0]["content"])
+
     def test_brain_without_tool_support_gets_no_tools(self):
         brain = ScriptedBrain()
         brain.supports_tools = False
@@ -132,6 +153,17 @@ class CommandTests(AgentTestCase):
         self.agent.handle("/clear_memory")
         self.assertIn("cleared", self.agent.handle("yes").text)
         self.assertIn("no saved memories", self.agent.handle("/memories").text)
+
+    def test_setup_command(self):
+        self.assertIn("only available", self.agent.handle("/setup").text)  # scripted brain: no installer
+        from brain.local import LocalBrain
+        agent = self.new_agent(LocalBrain("http://127.0.0.1:9", ""))
+        self.assertIsNotNone(agent.setup)
+        reply = agent.handle("hello")
+        self.assertIn("/setup", reply.text)  # a missing brain points the user to automatic setup
+        with mock.patch.object(agent.setup, "start", return_value=True) as start:
+            self.assertIn("Setting up my brain", agent.handle("/setup").text)
+        start.assert_called_once()
 
     def test_other_commands(self):
         self.assertIn("Unknown command", self.agent.handle("/dance").text)

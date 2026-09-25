@@ -138,3 +138,22 @@ class SaveKnowledge(Tool):
     def run(self, topic: str, content: str, source: str = "") -> str:
         entry = self.context.memory_store.add_knowledge(topic, content, source)
         return f"Saved knowledge #K{entry.id} about '{entry.topic}'."
+
+
+class LearnLesson(Tool):
+    name = "learn_lesson"
+    description = (
+        "Save a lesson about how YOU should behave or work for this user, so you improve "
+        "permanently. Use it when the user corrects you, states a preference about your "
+        "answers, or when you discover a better way to do a task. Example: "
+        "'Always write Python code with comments' or 'Geany is at D:/Apps/Geany/bin/geany.exe'."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {"lesson": {"type": "string", "description": "The lesson, as one clear instruction"}},
+        "required": ["lesson"],
+    }
+
+    def run(self, lesson: str) -> str:
+        entry = self.context.memory_store.add_lesson(lesson)
+        return f"Lesson #{entry.id} saved. I'll follow it from now on: {entry.content}"

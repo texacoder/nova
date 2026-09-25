@@ -272,6 +272,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn-approve { background: rgba(61, 255, 168, 0.12); border: 1px solid var(--green); color: var(--green); }
 .btn-deny { background: rgba(255, 77, 94, 0.1); border: 1px solid var(--red); color: var(--red); }
 
+/* --- brain setup card --- */
+.setup-card {
+  margin: 16px 20px 0;
+  padding: 16px 18px;
+  border: 1px solid var(--amber);
+  border-radius: 12px;
+  background: rgba(255, 179, 0, 0.06);
+  box-shadow: 0 0 24px rgba(255, 179, 0, 0.12);
+}
+.setup-card[hidden] { display: none; }
+.setup-card h2 { margin: 0 0 8px; font-family: var(--mono); font-size: 13px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--amber); }
+.setup-card p { margin: 0 0 12px; line-height: 1.5; color: var(--text); white-space: pre-line; }
+.setup-card.working h2 { color: var(--cyan); }
+.setup-card.working { border-color: var(--cyan); background: rgba(0, 229, 255, 0.05); }
+.progress { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin-bottom: 12px; }
+.progress[hidden] { display: none; }
+.progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--cyan-dim), var(--cyan)); box-shadow: 0 0 10px var(--cyan); transition: width 0.4s; }
+.progress.indeterminate .progress-bar { width: 30%; animation: slide 1.4s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
+
 /* --- small screens --- */
 .layout > * { min-width: 0; }
 

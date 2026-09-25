@@ -10,13 +10,15 @@ tools and memory logic live in agent.py and the packages it uses.
 """
 
 import argparse
+import shutil
 import sys
 import threading
+import time
 import webbrowser
 
 from agent import Agent
 from brain import create_brain
-from config import ConfigError, load_config
+from config import PROJECT_ROOT, ConfigError, load_config
 from memory.database import MemoryStore, MemoryStoreError
 from personality import load_personality
 from utils.logger import get_logger, setup_logging
@@ -26,6 +28,9 @@ LINE = "=" * 44
 
 def build_agent():
     """Load config, logging, memory, personality and brain. Returns (config, agent) or exits."""
+    env_file, example = PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.example"
+    if not env_file.exists() and example.exists():
+        shutil.copy(example, env_file)  # first run: create settings from the example
     try:
         config = load_config()
     except ConfigError as error:
@@ -48,7 +53,11 @@ def build_agent():
 
     personality = load_personality(config.personality_file, config.name, config.version)
     brain = create_brain(config)
-    return config, Agent(config, brain, memory_store, personality)
+    agent = Agent(config, brain, memory_store, personality)
+    if agent.setup:
+        # Start an installed-but-stopped Ollama and pick an installed model, silently.
+        agent.setup.quick_start()
+    return config, agent
 
 
 def print_banner(config, agent) -> None:
@@ -57,11 +66,48 @@ def print_banner(config, agent) -> None:
     print("Personal AI Assistant")
     print(LINE)
     health = agent.brain.health_check()
-    if not health.ok:
-        print(f"\nNote: the brain is not ready, so chatting won't work yet.\n{health.message}")
-        print("Commands like /remember and /learn still work.")
+    if health.ok:
+        print(f"\nBrain online: {health.message}")
     else:
-        print(f"\n{health.message}")
+        print("\nNOVA's brain (the local AI model) is not installed or not running yet.")
+
+
+def run_setup_in_terminal(agent) -> None:
+    """Run the automatic brain setup, showing progress in the terminal."""
+    agent.setup.start()
+    last = ""
+    while True:
+        status = agent.setup.snapshot()
+        progress = status.get("progress")
+        bar = ""
+        if isinstance(progress, (int, float)):
+            filled = int(progress * 30)
+            bar = f" [{'#' * filled}{'.' * (30 - filled)}] {progress * 100:5.1f}%"
+        line = f"{status['message'][:70]}{bar}"
+        if line != last:
+            print("\r" + line.ljust(110), end="", flush=True)
+            last = line
+        if status["state"] in ("done", "error"):
+            print()
+            if status["state"] == "error":
+                print(f"Setup problem: {status['message']}")
+            return
+        time.sleep(0.5)
+
+
+def offer_setup(config, agent) -> None:
+    if not agent.setup or agent.brain.health_check().ok:
+        return
+    print(f"{config.name} can set up its brain automatically: install the free Ollama engine if needed")
+    print("and download the best AI model for this PC (one-time download of a few GB).")
+    try:
+        answer = input("Set it up now? [Y/n]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = "n"
+    if answer in ("", "y", "yes"):
+        run_setup_in_terminal(agent)
+    else:
+        print("OK. Type /setup any time.")
 
 
 # --- terminal mode ------------------------------------------------------------
@@ -87,6 +133,7 @@ def ask_approval(pending) -> bool:
 def run_cli(config, agent) -> None:
     log = get_logger()
     print_banner(config, agent)
+    offer_setup(config, agent)
     print("\nType /help for commands, /exit to quit.\n")
 
     while not agent.should_exit:
@@ -96,6 +143,9 @@ def run_cli(config, agent) -> None:
             print("\nGoodbye.")
             break
 
+        if user_input.strip().lower() == "/setup" and agent.setup:
+            run_setup_in_terminal(agent)
+            continue
         try:
             reply = agent.handle(user_input)
             shown = 0  # each reply repeats this turn's earlier steps; print only new ones

@@ -52,6 +52,12 @@
     </section>
 
     <section class="chat-panel">
+      <div id="setup" class="setup-card" hidden>
+        <h2>Brain offline</h2>
+        <p id="setup-text">{{NAME}}'s brain is a free AI model that runs on this PC. It isn't installed yet. {{NAME}} can set it up for you: install the Ollama engine if needed and download the best model for your PC's memory (a one-time download of a few GB).</p>
+        <div id="setup-progress" class="progress" hidden><div id="setup-bar" class="progress-bar"></div></div>
+        <button id="setup-btn" class="btn-approve">Set up {{NAME}}'s brain</button>
+      </div>
       <div id="messages" class="messages" aria-live="polite"></div>
 
       <form id="composer" class="composer">

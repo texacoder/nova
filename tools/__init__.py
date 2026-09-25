@@ -10,7 +10,7 @@ from tools.apps import OpenApplication, OpenPath
 from tools.base import Tool, ToolContext, ToolError, ToolRegistry
 from tools.email_tools import ReadEmails, SendEmail
 from tools.files import ListDirectory, ReadFile, WriteFile
-from tools.knowledge import LearnTopic, Recall, Remember, SaveKnowledge
+from tools.knowledge import LearnLesson, LearnTopic, Recall, Remember, SaveKnowledge
 from tools.system import GetDateTime, RunCommand, SystemInfo
 from tools.web import FetchWebpage, WebSearch
 
@@ -20,7 +20,7 @@ ALL_TOOLS = [
     # internet
     WebSearch, FetchWebpage,
     # memory & learning
-    Remember, Recall, LearnTopic, SaveKnowledge,
+    Remember, Recall, LearnTopic, SaveKnowledge, LearnLesson,
     # files
     ListDirectory, ReadFile, WriteFile,
     # PC control
