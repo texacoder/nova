@@ -2,12 +2,12 @@
 Configuration for NOVA.
 
 Settings are read from (highest priority first):
-  1. Real environment variables  (e.g. `export OLLAMA_MODEL=llama3.2`)
+  1. Real environment variables  (e.g. `set OLLAMA_MODEL=qwen2.5:7b`)
   2. A `.env` file in the project folder
   3. The defaults defined below
 
 Nothing here is machine-specific: relative paths are resolved against the
-project folder, so NOVA works wherever you put it.
+project folder and "~" means your home folder, so NOVA works on any PC.
 """
 
 import os
@@ -22,17 +22,37 @@ SUPPORTED_BRAINS = ("ollama", "mock")
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 DEFAULTS = {
+    # Identity
     "NOVA_NAME": "NOVA",
-    "NOVA_VERSION": "0.1",
+    "NOVA_VERSION": "1.0",
+    # Brain
     "NOVA_BRAIN": "ollama",
+    "OLLAMA_HOST": "http://localhost:11434",
+    "OLLAMA_MODEL": "",
+    "OLLAMA_TIMEOUT": "300",
+    "OLLAMA_NUM_CTX": "8192",
+    # Storage, personality, logging
     "NOVA_DATA_DIR": "data",
     "NOVA_PERSONALITY_FILE": "personality/nova.txt",
     "NOVA_LOG_LEVEL": "INFO",
-    "NOVA_MAX_HISTORY": "20",
+    # Context
+    "NOVA_MAX_HISTORY": "40",
     "NOVA_MAX_MEMORIES_IN_PROMPT": "50",
-    "OLLAMA_HOST": "http://localhost:11434",
-    "OLLAMA_MODEL": "",
-    "OLLAMA_TIMEOUT": "120",
+    "NOVA_MAX_TOOL_STEPS": "8",
+    # PC control
+    "NOVA_WORKSPACE": "~/NOVA_Workspace",
+    "NOVA_APPS_FILE": "apps.json",
+    "NOVA_COMMAND_TIMEOUT": "60",
+    "NOVA_AUTO_APPROVE": "",
+    # Web UI
+    "NOVA_WEB_HOST": "127.0.0.1",
+    "NOVA_WEB_PORT": "8765",
+    # Email (optional)
+    "EMAIL_ADDRESS": "",
+    "EMAIL_PASSWORD": "",
+    "SMTP_HOST": "smtp.gmail.com",
+    "SMTP_PORT": "587",
+    "IMAP_HOST": "imap.gmail.com",
 }
 
 
@@ -47,14 +67,27 @@ class Config:
     name: str
     version: str
     brain: str
+    ollama_host: str
+    ollama_model: str
+    ollama_timeout: int
+    ollama_num_ctx: int
     data_dir: Path
     personality_file: Path
     log_level: str
     max_history: int
     max_memories_in_prompt: int
-    ollama_host: str
-    ollama_model: str
-    ollama_timeout: int
+    max_tool_steps: int
+    workspace: Path
+    apps_file: Path
+    command_timeout: int
+    auto_approve: frozenset
+    web_host: str
+    web_port: int
+    email_address: str
+    email_password: str
+    smtp_host: str
+    smtp_port: int
+    imap_host: str
 
     @property
     def db_path(self) -> Path:
@@ -63,6 +96,10 @@ class Config:
     @property
     def log_file(self) -> Path:
         return self.data_dir / "logs" / "nova.log"
+
+    @property
+    def email_configured(self) -> bool:
+        return bool(self.email_address and self.email_password)
 
 
 def read_env_file(path: Path) -> dict:
@@ -77,7 +114,7 @@ def read_env_file(path: Path) -> dict:
         return values
 
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8-sig")  # -sig: tolerate Notepad's BOM
     except (OSError, UnicodeDecodeError) as error:
         raise ConfigError(f"Could not read {path}: {error}") from error
 
@@ -111,7 +148,7 @@ def _to_int(settings: dict, key: str, minimum: int) -> int:
 
 
 def _to_path(value: str) -> Path:
-    path = Path(value).expanduser()
+    path = Path(os.path.expandvars(value)).expanduser()
     if not path.is_absolute():
         path = PROJECT_ROOT / path
     return path
@@ -154,16 +191,33 @@ def load_config(env_file: Path | None = None, environ: dict | None = None) -> Co
     if not name:
         raise ConfigError("NOVA_NAME cannot be empty")
 
+    auto_approve = frozenset(
+        item.strip() for item in settings["NOVA_AUTO_APPROVE"].split(",") if item.strip()
+    )
+
     return Config(
         name=name,
         version=settings["NOVA_VERSION"].strip() or DEFAULTS["NOVA_VERSION"],
         brain=brain,
+        ollama_host=ollama_host,
+        ollama_model=settings["OLLAMA_MODEL"].strip(),
+        ollama_timeout=_to_int(settings, "OLLAMA_TIMEOUT", minimum=1),
+        ollama_num_ctx=_to_int(settings, "OLLAMA_NUM_CTX", minimum=512),
         data_dir=_to_path(settings["NOVA_DATA_DIR"]),
         personality_file=_to_path(settings["NOVA_PERSONALITY_FILE"]),
         log_level=log_level,
         max_history=_to_int(settings, "NOVA_MAX_HISTORY", minimum=2),
         max_memories_in_prompt=_to_int(settings, "NOVA_MAX_MEMORIES_IN_PROMPT", minimum=0),
-        ollama_host=ollama_host,
-        ollama_model=settings["OLLAMA_MODEL"].strip(),
-        ollama_timeout=_to_int(settings, "OLLAMA_TIMEOUT", minimum=1),
+        max_tool_steps=_to_int(settings, "NOVA_MAX_TOOL_STEPS", minimum=1),
+        workspace=_to_path(settings["NOVA_WORKSPACE"]),
+        apps_file=_to_path(settings["NOVA_APPS_FILE"]),
+        command_timeout=_to_int(settings, "NOVA_COMMAND_TIMEOUT", minimum=1),
+        auto_approve=auto_approve,
+        web_host=settings["NOVA_WEB_HOST"].strip() or "127.0.0.1",
+        web_port=_to_int(settings, "NOVA_WEB_PORT", minimum=1),
+        email_address=settings["EMAIL_ADDRESS"].strip(),
+        email_password=settings["EMAIL_PASSWORD"].strip(),
+        smtp_host=settings["SMTP_HOST"].strip(),
+        smtp_port=_to_int(settings, "SMTP_PORT", minimum=1),
+        imap_host=settings["IMAP_HOST"].strip(),
     )

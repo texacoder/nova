@@ -6,20 +6,24 @@ NOVA's agent only talks to this interface, so the model behind it can be
 swapped (Ollama today, something else tomorrow) without touching the rest
 of the code.
 
-Messages use the common chat format understood by Ollama and most other
-local model servers:
+Messages use the common chat format understood by Ollama:
 
-    [
-        {"role": "system",    "content": "You are NOVA..."},
-        {"role": "user",      "content": "Hello"},
-        {"role": "assistant", "content": "Hello. How can I help?"},
-    ]
+    {"role": "system",    "content": "You are NOVA..."}
+    {"role": "user",      "content": "What time is it?"}
+    {"role": "assistant", "content": "", "tool_calls": [
+        {"function": {"name": "get_datetime", "arguments": {}}}]}
+    {"role": "tool",      "content": "2026-09-25 17:03", "tool_name": "get_datetime"}
+    {"role": "assistant", "content": "It's 17:03."}
+
+"Tools" are actions NOVA can take (search the web, open an app...).
+The brain doesn't run tools itself: it *asks* for them by returning
+tool calls, and the agent decides whether and how to run them.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-VALID_ROLES = ("system", "user", "assistant")
+VALID_ROLES = ("system", "user", "assistant", "tool")
 
 
 class BrainError(Exception):
@@ -38,16 +42,38 @@ class BrainStatus:
     message: str
 
 
+@dataclass
+class ToolCall:
+    """The brain asking to run one tool."""
+
+    name: str
+    arguments: dict = field(default_factory=dict)
+
+    def to_message_format(self) -> dict:
+        return {"function": {"name": self.name, "arguments": self.arguments}}
+
+
+@dataclass
+class BrainReply:
+    """What the brain answered: text, and possibly tool calls."""
+
+    content: str
+    tool_calls: list[ToolCall] = field(default_factory=list)
+
+
 class Brain(ABC):
     """Base class every brain must follow."""
 
-    #: Short name shown in /status, e.g. "ollama (llama3.2)".
+    #: Short name shown in /status, e.g. "ollama (qwen2.5:7b)".
     name = "brain"
+    #: Whether this brain can request tools. Brains may switch this off.
+    supports_tools = True
 
     @abstractmethod
-    def generate_response(self, messages: list[dict]) -> str:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> BrainReply:
         """
-        Return the assistant's reply to `messages`.
+        Reply to `messages`. `tools` lists the tools the brain may request
+        (in Ollama's JSON-schema format).
 
         Raises BrainError (or BrainUnavailableError) on failure.
         """
@@ -55,6 +81,10 @@ class Brain(ABC):
     @abstractmethod
     def health_check(self) -> BrainStatus:
         """Report whether the brain is ready to use. Must never raise."""
+
+    def generate_response(self, messages: list[dict]) -> str:
+        """Plain text reply with no tools (handy for summaries)."""
+        return self.chat(messages).content
 
 
 def validate_messages(messages: list[dict]) -> None:

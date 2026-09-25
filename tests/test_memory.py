@@ -60,6 +60,22 @@ class MemoryStoreTests(unittest.TestCase):
         self.assertEqual(self.store.clear(), 2)
         self.assertEqual(self.store.count(), 0)
 
+    def test_search_ranks_by_relevance(self):
+        self.store.add("My store is called EXORASTORE.")
+        self.store.add("I like green tea.")
+        self.store.add("The store opens at 9am.")
+        found = [m.content for m in self.store.search("what is my store called", limit=5)]
+        self.assertEqual(found[0], "My store is called EXORASTORE.")
+        self.assertNotIn("I like green tea.", found)
+
+    def test_knowledge(self):
+        entry = self.store.add_knowledge("solar panels", "Solar panels turn sunlight into electricity.", "https://x.org")
+        self.store.add_knowledge("tea", "Green tea contains caffeine.")
+        self.assertEqual(self.store.count_knowledge(), 2)
+        self.assertEqual(self.store.search_knowledge("how do solar panels work")[0].id, entry.id)
+        self.assertTrue(self.store.delete_knowledge(entry.id))
+        self.assertEqual(self.store.count_knowledge(), 1)
+
     def test_corrupted_database_gives_friendly_error(self):
         bad = Path(self.tmp.name) / "corrupt.db"
         bad.write_bytes(b"this is not a sqlite database" * 100)
@@ -68,6 +84,15 @@ class MemoryStoreTests(unittest.TestCase):
 
 
 class ConversationMemoryTests(unittest.TestCase):
+    def test_trimming_never_starts_mid_tool_exchange(self):
+        convo = ConversationMemory(max_messages=4)
+        convo.add("user", "q1")
+        convo.add("assistant", "", tool_calls=[{"function": {"name": "x", "arguments": {}}}])
+        convo.add("tool", "result", tool_name="x")
+        convo.add("assistant", "a1")
+        convo.add("user", "q2")  # trimming drops "q1": the history must restart at a user message
+        self.assertEqual(convo.get_messages()[0], {"role": "user", "content": "q2"})
+
     def test_keeps_order_and_limit(self):
         convo = ConversationMemory(max_messages=3)
         for i in range(5):

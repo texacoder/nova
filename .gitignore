@@ -1,5 +1,6 @@
-# Local settings (may contain personal values)
+# Local settings (may contain passwords and personal values)
 .env
+apps.json
 
 # NOVA's local data: memory database and logs
 data/*

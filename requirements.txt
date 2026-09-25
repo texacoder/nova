@@ -1,3 +1,6 @@
-# NOVA v0.1 uses only the Python standard library.
-# Nothing needs to be installed. Optional, for nicer test output:
+# NOVA uses only the Python standard library. Nothing needs to be installed.
+# Optional, for nicer test output:
 #   pip install pytest
+#
+# External (free) programs:
+#   Ollama  - https://ollama.com  (runs the AI model on your PC)
