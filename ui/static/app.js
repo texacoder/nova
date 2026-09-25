@@ -183,6 +183,12 @@ function handleReply(reply) {
     showSetupCard(true);
     pollSetup();
   }
+  if (reply.restart) {
+    setState("thinking", "Restarting");
+    addMessage("system", "Restarting NOVA... this page will reconnect by itself.");
+    waitForRestart();
+    return;
+  }
   if (reply.exit) {
     addMessage("system", "NOVA has shut down. You can close this tab.");
     setState("offline", "Shut down");
@@ -212,6 +218,24 @@ async function refreshStatus() {
     setState("offline", "Cannot reach NOVA");
     return null;
   }
+}
+
+// ---------- restart ----------
+
+async function waitForRestart() {
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  for (let attempt = 0; attempt < 120; attempt++) {
+    try {
+      const response = await fetch("/", { cache: "no-store" });
+      if (response.ok) {
+        location.reload();  // the new NOVA has a new security token
+        return;
+      }
+    } catch (error) { /* not up yet */ }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  addMessage("system", "NOVA didn't come back. Check the NOVA window on your PC.");
+  setState("offline", "Restart failed");
 }
 
 // ---------- automatic brain setup ----------

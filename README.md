@@ -8,7 +8,7 @@
 - **Learns from the internet:** researches a topic and saves what it learned, with sources, to a permanent knowledge base.
 - **Email:** reads your inbox and sends mail (Gmail or any IMAP/SMTP provider).
 - **Remembers you:** facts about you persist across restarts.
-- **Improves itself:** learns lessons from your corrections and follows them from then on.
+- **Improves itself:** writes new skills (Python tools) for itself, edits its own source code (tested, backed up, and rolled back if anything breaks), and learns lessons from your corrections.
 - **Sets up its own brain:** installs the AI engine and downloads the right model for your PC in one click.
 - **Asks before risky actions:** sending email, running commands, touching files outside its own folder.
 
@@ -83,6 +83,8 @@ Send an email to friend@example.com saying I'll be late tonight
 How much free disk space do I have?
 Remember that my store is called EXORASTORE
 From now on, always add comments to code you write      ← NOVA learns this as a lesson
+Make yourself a skill that converts CSV files to JSON    ← NOVA writes new code for itself
+Improve your own help text so it's shorter               ← NOVA edits its own source code
 ```
 
 When NOVA wants to do something risky, an **Authorisation required** box appears showing exactly what it will do, such as the full command or the full email. Nothing happens until you click **Approve**.
@@ -102,6 +104,9 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `/knowledge` | List what NOVA has learned |
 | `/lessons` | List lessons NOVA learned about how you want it to work |
 | `/setup` | Install or repair NOVA's brain automatically |
+| `/skills` | List abilities NOVA wrote for itself |
+| `/rollback` | Undo NOVA's most recent change to its own code |
+| `/restart` | Restart NOVA (activates changes to its own code; the browser tab reconnects by itself) |
 | `/tools` | List NOVA's abilities and which ones ask first |
 | `/new` | Start a fresh conversation (memories are kept) |
 | `/status` | Brain, memory, email, and workspace status |
@@ -116,6 +121,10 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `learn_topic` | Search, read 3 pages, summarize, and save to the knowledge base | no |
 | `save_knowledge`, `remember`, `recall` | Manage long-term memory and knowledge | no |
 | `learn_lesson` | Save a lesson about how to work for you (after corrections or preferences) | no |
+| `create_skill` | Write a new Python tool for itself and start using it | **always** (you see the code) |
+| `remove_skill`, `list_skills` | Manage its self-written skills | remove: **always** |
+| `read_nova_source` | Read its own source code | no |
+| `modify_nova_source` | Change its own code or personality (tested and backed up) | **always** (you see a diff) |
 | `get_datetime`, `system_info` | Date/time, OS, CPU, disk space | no |
 | `list_directory`, `read_file` | Browse and read files | only outside the workspace |
 | `write_file` | Create or edit text/code files | only outside the workspace |
@@ -175,11 +184,26 @@ You can also change NOVA's core personality by editing `personality/nova.txt`. C
 
 **Honest note on "learning":** the AI model itself isn't retrained; that would need expensive hardware. NOVA learns the way a person keeps notes: it researches, writes a summary, and looks the summary up later. This is free, and you can inspect it (`/knowledge`) and correct it (`/forget K<id>`).
 
+## How NOVA improves itself
+
+**New skills.** When you ask for something none of NOVA's tools can do, NOVA can write a new tool in Python (`create_skill`). You see the full code and approve it. NOVA then checks it in a separate process (syntax, structure, that it loads), saves it to `skills/`, and uses it immediately. If the skill has a bug, NOVA sees the error and can write a fixed version. Skills load again every time NOVA starts. They can't replace built-in tools. Delete a file in `skills/` to remove a skill.
+
+**Editing its own code.** NOVA can read its source (`read_nova_source`) and change it (`modify_nova_source`). For every change:
+
+1. you see a diff of exactly what changes and approve it,
+2. the old version is backed up to `data/backups/`,
+3. NOVA's full test suite runs, and **if any test fails, the change is rolled back automatically**,
+4. `/rollback` undoes the most recent change, and `/restart` activates code changes.
+
+Some files are **locked** so NOVA can't weaken its own safeguards: `tests/`, `tools/base.py` (approval rules), `tools/self_modify.py`, `tools/skills.py`, and `ui/server.py` (web security). You can still edit them yourself.
+
+**Lessons and personality.** Corrections become lessons (see *How memory and learning work*), and `personality/nova.txt` changes apply from the next message.
+
 ## Safety
 
 - NOVA only listens on `127.0.0.1`, so other computers can't reach it.
 - The web page uses a secret token that changes on every start, so other websites open in your browser can't send commands to NOVA.
-- Risky actions need your click (see the tools table). The approval box shows exactly what will run.
+- Risky actions need your click (see the tools table). The approval box shows exactly what will run, including the full code of new skills and a diff for self-edits. **Only approve code you're comfortable running on your PC**; a web page or email could try to trick the model into writing harmful code.
 - The model is told to treat web pages, files, and emails as data, not instructions. A malicious page could still try to trick it, which is exactly why approvals exist. **Read approval requests before clicking Approve.**
 - NOVA never needs administrator rights. Don't run it as administrator.
 - Everything NOVA does is logged in `data/logs/nova.log`.
@@ -231,8 +255,11 @@ nova/
 │   ├── files.py         #   list_directory, read_file, write_file
 │   ├── apps.py          #   open_application, open_path
 │   ├── system.py        #   get_datetime, system_info, run_command
-│   └── email_tools.py   #   send_email, read_emails
+│   ├── email_tools.py   #   send_email, read_emails
+│   ├── skills.py        #   create_skill, remove_skill, list_skills (+ skill loader)
+│   └── self_modify.py   #   read_nova_source, modify_nova_source, rollback
 ├── memory/              # SQLite memories + knowledge, conversation memory
+├── skills/              # Abilities NOVA wrote for itself (loaded at startup)
 ├── personality/nova.txt # NOVA's personality and rules: edit freely
 ├── ui/                  # Web interface (server.py + static/ HTML, CSS, JS)
 ├── utils/               # Logging and text helpers
@@ -266,8 +293,6 @@ The tests don't need Ollama or internet access; they use fake servers, a scripte
 ## Future ideas
 
 v1.0 covers the core. Natural next steps, all still free:
-
-- Self-coding: NOVA writes, tests, and installs new skills (Python tools) for itself, and can propose changes to its own code with automatic tests and rollback
 
 - Fully offline voice (Whisper for speech-to-text, Piper for text-to-speech) and a wake word
 - Smarter memory search with local embeddings (Ollama `nomic-embed-text`)

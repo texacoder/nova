@@ -36,6 +36,7 @@ class ToolContext:
     config: Any
     memory_store: Any = None
     brain: Any = None
+    registry: Any = None  # set by create_registry, lets tools install new skills
 
 
 class Tool(ABC):
@@ -81,13 +82,19 @@ class ToolRegistry:
     def __init__(self, auto_approve: frozenset = frozenset()):
         self._tools: dict[str, Tool] = {}
         self.auto_approve = auto_approve
+        self.skill_names: set[str] = set()  # tools NOVA wrote for itself
+        self.skill_errors: list[str] = []   # skills that failed to load at startup
 
-    def register(self, tool: Tool) -> None:
+    def register(self, tool: Tool, replace: bool = False) -> None:
         if not tool.name:
             raise ValueError("A tool must have a name")
-        if tool.name in self._tools:
+        if tool.name in self._tools and not replace:
             raise ValueError(f"Tool {tool.name!r} is already registered")
         self._tools[tool.name] = tool
+
+    def unregister(self, name: str) -> bool:
+        self.skill_names.discard(name)
+        return self._tools.pop(name, None) is not None
 
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)

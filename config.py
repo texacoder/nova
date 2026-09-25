@@ -90,6 +90,8 @@ class Config:
     imap_host: str
     # The .env file these settings came from (brain setup saves the chosen model there).
     env_file: Path = PROJECT_ROOT / ".env"
+    # NOVA's own code folder (for skills and self-modification).
+    project_root: Path = PROJECT_ROOT
 
     @property
     def db_path(self) -> Path:
@@ -98,6 +100,14 @@ class Config:
     @property
     def log_file(self) -> Path:
         return self.data_dir / "logs" / "nova.log"
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.project_root / "skills"
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "backups"
 
     @property
     def email_configured(self) -> bool:

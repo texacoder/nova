@@ -27,6 +27,7 @@ from memory.database import MemoryStore, MemoryStoreError
 from tools import Tool, ToolContext, ToolError, create_registry
 from personality import load_personality
 from tools.knowledge import learn_topic
+from tools.self_modify import load_changes, rollback_last_change
 from utils.logger import get_logger
 from utils.text import truncate
 
@@ -45,6 +46,9 @@ HELP_TEXT = """Commands:
   /knowledge          List what NOVA has learned
   /lessons            List lessons NOVA learned about how to work for you
   /tools              List NOVA's abilities
+  /skills             List abilities NOVA wrote for itself
+  /rollback           Undo NOVA's most recent change to its own code
+  /restart            Restart NOVA (activates changes to its own code)
   /new                Start a fresh conversation (memories are kept)
   /status             Show NOVA's current status
   /setup              Install/repair NOVA's brain automatically
@@ -55,7 +59,8 @@ Anything else is sent to NOVA. Examples:
   write a hello world Python script and open it in Geany
   learn about solar panels
   check my latest emails
-  from now on, always answer in short bullet points   (NOVA learns this lesson)"""
+  from now on, always answer in short bullet points   (NOVA learns this lesson)
+  make yourself a skill that converts CSV files to JSON (NOVA writes new code for itself)"""
 
 
 @dataclass
@@ -75,6 +80,7 @@ class AgentReply:
     steps: list[dict] = field(default_factory=list)  # tools that ran this turn
     pending: PendingAction | None = None
     exit: bool = False
+    restart: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -82,6 +88,7 @@ class AgentReply:
             "steps": self.steps,
             "pending": vars(self.pending) if self.pending else None,
             "exit": self.exit,
+            "restart": self.restart,
         }
 
 
@@ -94,6 +101,7 @@ class Agent:
         self.conversation = ConversationMemory(config.max_history)
         self.tools = create_registry(ToolContext(config, memory_store, brain))
         self.should_exit = False
+        self.restart_requested = False
         self.pending: PendingAction | None = None
         self._queue: list[ToolCall] = []     # tool calls still to run this turn
         self._steps: list[dict] = []         # tools that ran this turn
@@ -115,6 +123,9 @@ class Agent:
             "/lessons": self._cmd_lessons,
             "/setup": self._cmd_setup,
             "/tools": self._cmd_tools,
+            "/skills": self._cmd_skills,
+            "/rollback": self._cmd_rollback,
+            "/restart": self._cmd_restart,
             "/new": self._cmd_new,
             "/status": self._cmd_status,
             "/exit": self._cmd_exit,
@@ -143,7 +154,8 @@ class Agent:
             if handler is None:
                 return AgentReply(f"Unknown command: {command}. Type /help for the list of commands.")
             try:
-                return AgentReply(handler(argument.strip()), exit=self.should_exit)
+                return AgentReply(handler(argument.strip()), exit=self.should_exit,
+                                  restart=self.restart_requested)
             except (MemoryStoreError, ToolError) as error:
                 return AgentReply(str(error))
 
@@ -388,8 +400,24 @@ class Agent:
                 gate = "asks if risky"
             else:
                 gate = "free"
+            if name in self.tools.skill_names:
+                gate += " (skill)"
             lines.append(f"  {name:<17} {gate:<14} {truncate(tool.description, 70).splitlines()[0]}")
         return "NOVA's abilities:\n" + "\n".join(lines)
+
+    def _cmd_skills(self, _argument: str) -> str:
+        text = self.tools.execute("list_skills", {})
+        if self.tools.skill_errors:
+            text += "\n\nSkills that failed to load (see the log):\n" + "\n".join(f"  {e}" for e in self.tools.skill_errors)
+        return text
+
+    def _cmd_rollback(self, _argument: str) -> str:
+        return rollback_last_change(self.config)
+
+    def _cmd_restart(self, _argument: str) -> str:
+        self.should_exit = True
+        self.restart_requested = True
+        return "Restarting NOVA..."
 
     def _cmd_new(self, _argument: str) -> str:
         self.conversation.clear()
@@ -404,7 +432,9 @@ class Agent:
             "Version": f"{self.config.name} v{self.config.version}",
             "Brain": self.brain.name,
             "Brain status": ("ready" if health.ok else "NOT ready") + " - " + health.message.splitlines()[0],
-            "Tools": f"{len(self.tools)}" + ("" if self.brain.supports_tools else " (model can't use tools)"),
+            "Tools": f"{len(self.tools)}, {len(self.tools.skill_names)} self-written"
+                     + ("" if self.brain.supports_tools else " (model can't use tools)"),
+            "Self-edits": f"{len(load_changes(self.config))} changes to its own code",
             "Memories": f"{self.memory_store.count()} saved",
             "Knowledge": f"{self.memory_store.count_knowledge()} topics learned",
             "Lessons": f"{len(self.memory_store.list_lessons())} learned",

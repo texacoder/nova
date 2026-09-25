@@ -7,10 +7,15 @@ NOVA - start here.
 
 This file only sets things up and handles input/output. The thinking,
 tools and memory logic live in agent.py and the packages it uses.
+
+NOVA runs inside a small "supervisor": when NOVA restarts itself (/restart,
+e.g. after changing its own code), the supervisor starts it again.
 """
 
 import argparse
+import os
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -24,6 +29,7 @@ from personality import load_personality
 from utils.logger import get_logger, setup_logging
 
 LINE = "=" * 44
+RESTART_EXIT_CODE = 3
 
 
 def build_agent():
@@ -202,9 +208,33 @@ def main() -> int:
         run_cli(config, agent)
     else:
         run_web(config, agent, open_browser=not args.no_browser)
+    if agent.restart_requested:
+        get_logger().info("%s restarting", config.name)
+        return RESTART_EXIT_CODE
     get_logger().info("%s stopped", config.name)
     return 0
 
 
+def supervise() -> int:
+    """Run NOVA in a child process, and start it again whenever it asks to restart."""
+    args = sys.argv[1:]
+    env = {**os.environ, "NOVA_CHILD": "1"}
+    while True:
+        process = subprocess.Popen([sys.executable, os.path.abspath(__file__), *args], env=env)
+        while True:
+            try:
+                code = process.wait()
+                break
+            except KeyboardInterrupt:
+                continue  # NOVA receives Ctrl+C too and shuts down by itself
+        if code != RESTART_EXIT_CODE:
+            return code
+        print("\nRestarting NOVA...\n")
+        if "--cli" not in args and "--no-browser" not in args:
+            args = [*args, "--no-browser"]  # the open browser tab reconnects by itself
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    if os.environ.get("NOVA_CHILD"):
+        sys.exit(main())
+    sys.exit(supervise())
