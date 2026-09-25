@@ -15,6 +15,7 @@ The terminal (main.py) and the web UI (ui/server.py) both use this class.
 """
 
 import platform
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -32,6 +33,14 @@ from utils.logger import get_logger
 from utils.text import truncate
 
 log = get_logger("agent")
+
+MAX_NUDGES = 2  # times per message NOVA may ask the model to correct itself
+
+NUDGE_EMPTY = ("(Automatic note from NOVA's system: your last reply was empty. Answer the user now, "
+               "or call a tool if an action is needed.)")
+NUDGE_SKILL = ("(Automatic note from NOVA's system: you wrote skill code as text, but nothing was "
+               "installed. Call the create_skill tool now with the complete, corrected code. Don't "
+               "show code to the user instead of calling the tool.)")
 
 YES = {"yes", "y", "approve", "ok", "sure"}
 NO = {"no", "n", "deny", "cancel"}
@@ -106,6 +115,7 @@ class Agent:
         self._queue: list[ToolCall] = []     # tool calls still to run this turn
         self._steps: list[dict] = []         # tools that ran this turn
         self._rounds = 0                     # brain calls this turn
+        self._nudges = 0                     # self-corrections requested this turn
         self._awaiting_clear_confirmation = False
         # Automatic brain installer (only for the real local brain).
         self.setup = SetupManager(brain, config.env_file) if isinstance(brain, LocalBrain) else None
@@ -160,7 +170,7 @@ class Agent:
                 return AgentReply(str(error))
 
         self.conversation.add("user", text)
-        self._queue, self._steps, self._rounds = [], [], 0
+        self._queue, self._steps, self._rounds, self._nudges = [], [], 0, 0
         return self._continue()
 
     def resolve_pending(self, approved: bool) -> AgentReply:
@@ -183,11 +193,21 @@ class Agent:
             if self._run_queue():
                 return self._pending_reply()
 
+            correction: list[dict] = []  # temporary messages asking the model to fix a slip
             while self._rounds < self.config.max_tool_steps:
                 self._rounds += 1
-                reply = self.brain.chat(self.build_messages(), self._tool_schemas())
+                reply = self.brain.chat(self.build_messages() + correction, self._tool_schemas())
+                correction = []
                 if not reply.tool_calls:
-                    text = reply.content or "(The model returned an empty reply.)"
+                    nudge = self._needs_nudge(reply.content)
+                    if nudge and self._nudges < MAX_NUDGES:
+                        self._nudges += 1
+                        log.info("Asking the model to correct itself: %s", nudge[:60])
+                        if reply.content:
+                            correction.append({"role": "assistant", "content": reply.content})
+                        correction.append({"role": "user", "content": nudge})
+                        continue
+                    text = reply.content or "I couldn't come up with an answer to that. Could you rephrase it?"
                     self.conversation.add("assistant", text)
                     return AgentReply(text, self._steps)
 
@@ -245,6 +265,17 @@ class Agent:
             "status": status,
             "result": truncate(result, 800),
         })
+
+    def _needs_nudge(self, text: str) -> str | None:
+        """Spot common model slips that it can fix itself if asked."""
+        if not text.strip():
+            return NUDGE_EMPTY
+        wrote_skill_as_text = "```" in text and re.search(r"class\s+\w+\s*\(\s*Tool\s*\)", text)
+        installed = any(s["tool"] == "create_skill" and s["status"] == "ok" for s in self._steps)
+        if wrote_skill_as_text and not installed and self.brain.supports_tools \
+                and self.tools.get("create_skill"):
+            return NUDGE_SKILL
+        return None
 
     def _pending_reply(self) -> AgentReply:
         return AgentReply(f"I need your approval to:\n{self.pending.description}",

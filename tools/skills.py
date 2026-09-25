@@ -73,6 +73,26 @@ print("OK")
 """
 
 
+SKILL_RULES = (
+    "Nothing was installed. Fix the code and call create_skill again right away. Do NOT just show "
+    "code to the user and do NOT claim the skill exists. Rules: the code starts with "
+    "`from tools.base import Tool, ToolError`; it has one class inheriting from Tool; that class sets "
+    "name = the skill name, description, and parameters (JSON schema with type 'object'); run(self, ...) "
+    "returns a string; only import modules and functions that really exist in the standard library."
+)
+
+
+def prepare_skill_code(code: str) -> str:
+    """Tidy up code from the model: remove ``` fences and add the Tool import if it's missing."""
+    text = code.strip()
+    fenced = re.match(r"^```(?:python|py)?[ \t]*\n(.*?)\n?```$", text, re.DOTALL)
+    if fenced:
+        text = fenced.group(1)
+    if "Tool" in text and not re.search(r"^\s*from\s+tools\.base\s+import\b", text, re.MULTILINE):
+        text = "from tools.base import Tool, ToolError\n\n" + text
+    return text.rstrip() + "\n"
+
+
 def _module_tools(path: Path) -> list[type]:
     """Import a skill file and return the Tool classes it defines."""
     module_name = f"nova_skill_{path.stem}"
@@ -161,7 +181,8 @@ class CreateSkill(Tool):
     def describe(self, arguments: dict) -> str:
         name = str(arguments.get("name", ""))
         verb = "Replace skill" if (self.config.skills_dir / f"{name}.py").exists() else "Create new skill"
-        return f"{verb} '{name}' (Python code that will run on your PC):\n\n{arguments.get('code', '')}"
+        code = prepare_skill_code(str(arguments.get("code", "")))
+        return f"{verb} '{name}' (Python code that will run on your PC):\n\n{code}"
 
     def run(self, name: str, code: str) -> str:
         name = name.strip()
@@ -171,7 +192,11 @@ class CreateSkill(Tool):
         if name in registry.names() and name not in registry.skill_names:
             raise ToolError(f"'{name}' is a built-in tool; choose another name")
 
-        validate_skill(code, name)
+        code = prepare_skill_code(code)
+        try:
+            validate_skill(code, name)
+        except ToolError as error:
+            raise ToolError(f"{error}\n\n{SKILL_RULES}")
 
         folder = self.config.skills_dir
         folder.mkdir(parents=True, exist_ok=True)
@@ -187,7 +212,7 @@ class CreateSkill(Tool):
                 path.unlink(missing_ok=True)
             else:
                 path.write_text(previous, encoding="utf-8")
-            raise ToolError(f"The skill passed its check but failed to load: {error}")
+            raise ToolError(f"The skill passed its check but failed to load: {error}\n\n{SKILL_RULES}")
         log.info("Skill %s installed", name)
         return f"Skill '{name}' is installed ({path}) and ready to use right now. Call it to do the task."
 

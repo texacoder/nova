@@ -175,6 +175,65 @@ class SelfModifyTests(SelfImprovementTestCase):
         self.assertIn("Error", self.run_tool("read_nova_source", path=".env"))
 
 
+class SkillRobustnessTests(SelfImprovementTestCase):
+    """Local models make small slips; NOVA should absorb them."""
+
+    def test_missing_import_and_markdown_fences_are_fixed(self):
+        code = "```python\n" + GOOD_SKILL.replace("from tools.base import Tool, ToolError\n", "") + "```"
+        self.assertIn("installed", self.run_tool("create_skill", name="shout", code=code))
+        self.assertEqual(self.run_tool("shout", text="ok"), "OK!")
+
+    def test_simple_parameters_map_and_string_numbers_work(self):
+        code = GOOD_SKILL.replace(
+            'parameters = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}',
+            'parameters = {"text": {"type": "string"}, "times": {"type": "integer"}}',
+        ).replace("def run(self, text: str) -> str:\n        return text.upper() + \"!\"",
+                  "def run(self, text: str, times: int) -> str:\n        return text.upper() * times")
+        self.assertIn("installed", self.run_tool("create_skill", name="shout", code=code))
+        schema = self.registry.get("shout").schema()["function"]["parameters"]
+        self.assertEqual(schema["type"], "object")
+        self.assertEqual(self.run_tool("shout", text="ab", times="3"), "ABABAB")  # "3" -> 3
+
+    def test_failed_skill_explains_how_to_fix(self):
+        bad = GOOD_SKILL.replace("from tools.base import Tool, ToolError", "from secrets import choices\nfrom tools.base import Tool, ToolError")
+        result = self.run_tool("create_skill", name="shout", code=bad)
+        self.assertIn("cannot import name 'choices'", result)
+        self.assertIn("Nothing was installed", result)
+        self.assertIn("call create_skill again", result)
+
+    def test_agent_recovers_from_the_real_world_failure(self):
+        """Replay of a real session: bad import, then code pasted as text, then an empty reply."""
+        from brain.base import BrainReply, ToolCall
+        bad = GOOD_SKILL.replace("from tools.base import Tool, ToolError", "from secrets import choices, sample")
+        brain = ScriptedBrain(
+            BrainReply("", [ToolCall("create_skill", {"name": "shout", "code": bad})]),
+            BrainReply("Here is the corrected code:\n```python\n" + GOOD_SKILL + "```\nI'll now use this skill."),
+            BrainReply("", [ToolCall("create_skill", {"name": "shout", "code": GOOD_SKILL})]),
+            BrainReply("", [ToolCall("shout", {"text": "hello"})]),
+            BrainReply(""),
+            BrainReply("Done: HELLO!"),
+        )
+        agent = Agent(self.config, brain, self.store, "You are NOVA.")
+        reply = agent.handle("make a shout skill and use it")
+        self.assertIsNotNone(reply.pending)            # first attempt asks for approval
+        reply = agent.resolve_pending(True)             # fails its check; model pastes code instead...
+        self.assertIsNotNone(reply.pending)             # ...gets nudged, and calls create_skill properly
+        reply = agent.resolve_pending(True)
+        self.assertEqual(reply.text, "Done: HELLO!")    # the empty reply was retried too
+        self.assertEqual([(s["tool"], s["status"]) for s in reply.steps],
+                         [("create_skill", "error"), ("create_skill", "ok"), ("shout", "ok")])
+        nudges = [m["content"] for messages, _ in brain.calls for m in messages if "Automatic note" in m["content"]]
+        self.assertEqual(len(nudges), 2)
+        self.assertNotIn("Automatic note", str(agent.conversation.get_messages()))  # nudges aren't kept
+
+    def test_nudges_are_limited(self):
+        from brain.base import BrainReply
+        brain = ScriptedBrain(BrainReply(""), BrainReply(""), BrainReply(""), BrainReply("never reached"))
+        reply = Agent(self.config, brain, self.store, "You are NOVA.").handle("hi")
+        self.assertIn("rephrase", reply.text)
+        self.assertEqual(len(brain.calls), 3)
+
+
 class AgentCommandTests(SelfImprovementTestCase):
     def test_restart_skills_and_rollback_commands(self):
         agent = Agent(self.config, ScriptedBrain(), self.store, "You are NOVA.")

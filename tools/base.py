@@ -12,6 +12,7 @@ for your approval, because a web page or email could contain text that
 tries to trick the AI into doing something you didn't want.
 """
 
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -27,6 +28,46 @@ MAX_RESULT_CHARS = 6000
 
 class ToolError(Exception):
     """A friendly error message to hand back to the model."""
+
+
+def normalize_parameters(parameters) -> dict:
+    """
+    Accept the proper JSON-schema form ({"type": "object", "properties": ...})
+    or the simpler {"argument": {"type": ...}} map that models often write.
+    """
+    if not isinstance(parameters, dict):
+        return {"type": "object", "properties": {}, "required": []}
+    if parameters.get("type") == "object" or "properties" in parameters:
+        result = dict(parameters)
+        result["type"] = "object"
+        result.setdefault("properties", {})
+        result.setdefault("required", [])
+        return result
+    properties = {k: (v if isinstance(v, dict) else {"type": "string"}) for k, v in parameters.items()}
+    return {"type": "object", "properties": properties, "required": list(properties)}
+
+
+def coerce_argument(value, schema: dict):
+    """Fix common type slips from models, e.g. "16" sent for an integer."""
+    kind = schema.get("type") if isinstance(schema, dict) else None
+    try:
+        if kind == "integer" and isinstance(value, (str, float)) and not isinstance(value, bool):
+            return int(float(value))
+        if kind == "number" and isinstance(value, str):
+            return float(value)
+        if kind == "boolean" and isinstance(value, str):
+            return value.strip().lower() in ("true", "yes", "1", "on")
+        if kind == "string" and isinstance(value, (int, float)) and not isinstance(value, bool):
+            return str(value)
+        if kind == "array" and isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                return parsed if isinstance(parsed, list) else [value]
+            except json.JSONDecodeError:
+                return [value]
+    except ValueError:
+        pass
+    return value
 
 
 @dataclass
@@ -52,6 +93,7 @@ class Tool(ABC):
     def __init__(self, context: ToolContext):
         self.context = context
         self.config = context.config
+        self.parameters = normalize_parameters(type(self).parameters)
 
     @abstractmethod
     def run(self, **arguments) -> str:
@@ -121,9 +163,10 @@ class ToolRegistry:
         if tool is None:
             return f"Error: there is no tool called {name!r}. Available: {', '.join(self.names())}"
 
-        # Ignore arguments the tool doesn't define (models sometimes invent extras).
+        # Ignore arguments the tool doesn't define (models sometimes invent extras),
+        # and fix simple type slips like "16" instead of 16.
         known = tool.parameters.get("properties", {})
-        clean_args = {k: v for k, v in arguments.items() if k in known}
+        clean_args = {k: coerce_argument(v, known[k]) for k, v in arguments.items() if k in known}
         missing = [k for k in tool.parameters.get("required", []) if k not in clean_args]
         if missing:
             return f"Error: {name} needs the argument(s): {', '.join(missing)}"
