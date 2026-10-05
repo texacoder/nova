@@ -51,15 +51,16 @@ def make_handler(state: FakeOllamaState):
                 if state.pull_error:
                     self.wfile.write(json.dumps({"error": state.pull_error}).encode() + b"\n")
                     return
+                # Like real Ollama, the model is installed before "success" is reported.
+                model = request["model"]
+                state.pulled.append(model)
+                state.models.append(model if ":" in model else model + ":latest")
                 events = [{"status": "pulling manifest"},
                           {"status": "pulling abc", "total": 100, "completed": 40},
                           {"status": "pulling abc", "total": 100, "completed": 100},
                           {"status": "success"}]
                 for event in events:
                     self.wfile.write(json.dumps(event).encode() + b"\n")
-                model = request["model"]
-                state.pulled.append(model)
-                state.models.append(model if ":" in model else model + ":latest")
             else:
                 self._json({"message": {"role": "assistant", "content": "hi"}})
 
