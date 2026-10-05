@@ -207,7 +207,7 @@ Remind me on Friday at 5:30 pm about the meeting
 
 - **Scheduled emails ask for your approval when you schedule them.** The approval box shows the exact send time ("Tue 6 Oct 2026, 6:00 AM (in 8 hours)") and the full email. At that time JARVIS sends it on its own.
 - **Reminders** appear in the chat in amber with a beep, are read out loud, and show as a Windows notification.
-- Times JARVIS understands: *in 10 minutes*, *in 2 hours*, *tomorrow at 6 am*, *tonight at 11*, *friday 5:30 pm*, *next monday*, *12 october*, *12/10 at 7 pm* (day/month), *at noon*. A day without a time means 9 AM.
+- Times JARVIS understands: *in 10 minutes*, *in 2 hours*, *tomorrow at 6 am*, *tonight at 11*, *friday 5:30 pm*, *next monday*, *12 october*, *12/10 at 7 pm* (day/month), *at noon*. A day without a time means 9 AM. A time that passed less than 10 minutes ago (for example while you were approving) means *right away*.
 - `/scheduled` lists what's waiting; `/cancel 3` (or *"cancel the reminder"*) cancels one.
 
 **JARVIS must be running at that time**, and the PC must be on and awake (not sleeping or shut down). The easiest way is `/autostart on`, which starts JARVIS minimized whenever you log in to Windows. If JARVIS was off when an email was due, it sends it as soon as it starts, if it's less than 12 hours late. If it's more than 12 hours late, it doesn't send it (it may be out of date) and tells you instead.
@@ -247,7 +247,7 @@ JARVIS has four kinds of memory, all stored locally in `data/jarvis.db` (SQLite)
 3. **Knowledge:** what JARVIS learned from the internet with `/learn` or `learn_topic`, stored with the source URLs.
 4. **Lessons:** how you want JARVIS to behave. When you correct it ("don't explain so much", "my Geany is on D:"), JARVIS saves a lesson and follows it in every future conversation.
 
-On each message, JARVIS adds your memories, all lessons, and the most relevant knowledge to what it sends the model.
+On each message, JARVIS adds your memories, all lessons, and learned knowledge that *clearly* matches your question (its topic, or at least two meaningful words) to what it sends the model. Loose matches are left out, because they confuse small models.
 
 You can also change JARVIS's core personality by editing `personality/jarvis.txt`. Changes apply on the next message, with no restart needed.
 

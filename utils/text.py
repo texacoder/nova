@@ -22,6 +22,26 @@ def relevance(query: str, text: str) -> int:
     return len(keywords(query) & keywords(text))
 
 
+# Everyday action and time words: sharing these says nothing about the topic.
+COMMON_WORDS = {
+    "send", "open", "show", "make", "write", "create", "delete", "find", "give", "get", "set", "put",
+    "want", "need", "like", "know", "now", "today", "tonight", "tomorrow", "yesterday", "time",
+    "minute", "minutes", "hour", "hours", "day", "days", "week", "am", "pm", "new", "all", "some",
+    "just", "also", "then", "there", "here", "them", "they", "their", "have", "has", "not", "yes",
+    "okay", "ok", "thanks", "again", "use", "used", "using", "one", "more", "many", "much", "very",
+}
+
+
+def clearly_related(query: str, topic: str, content: str) -> bool:
+    """
+    Strict check used before attaching learned knowledge to a question: the topic
+    name matches, or at least 2 meaningful words are shared. Numbers and everyday
+    words like "today" or "send" don't count.
+    """
+    words = {w for w in keywords(query) if not w.isdigit() and len(w) > 2 and w not in COMMON_WORDS}
+    return bool(words & keywords(topic)) or len(words & keywords(content)) >= 2
+
+
 def truncate(text: str, limit: int) -> str:
     """Shorten `text` to at most `limit` characters, marking the cut."""
     if len(text) <= limit:

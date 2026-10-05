@@ -58,6 +58,21 @@ class ParseWhenTests(unittest.TestCase):
             with self.assertRaises(WhenError, msg=text):
                 parse_when(text, NOW)
 
+    def test_odd_time_spellings(self):
+        self.check("10 :7 pm tomorrow", datetime(2026, 10, 6, 22, 7))
+        self.check("tomorrow 10.7 pm", datetime(2026, 10, 6, 22, 7))
+        self.check("12.10", datetime(2026, 10, 12, 9, 0))  # without am/pm it's still a date
+
+    def test_time_that_just_passed_means_right_away(self):
+        # e.g. "send it at 9:25 pm" approved at 9:30: send now, not tomorrow or never.
+        self.check("at 9:25 pm", NOW)
+        self.check("9:25 pm today", NOW)
+        self.check("monday 9:25 pm", NOW)
+        self.check("at 9:15 pm", datetime(2026, 10, 6, 21, 15))  # long gone: tomorrow
+        with self.assertRaises(WhenError):
+            parse_when("today at 9:15 pm", NOW)
+        self.assertIn("(right away)", describe_time(NOW, NOW))
+
     def test_describe_time(self):
         self.assertEqual(describe_time(datetime(2026, 10, 6, 6, 0), NOW), "Tue 6 Oct 2026, 6:00 AM (in 8 hours)")
         self.assertIn("(in 1 minute)", describe_time(NOW + timedelta(minutes=1), NOW))
@@ -213,6 +228,33 @@ class ScheduleToolTests(unittest.TestCase):
         for text in ["email bob tomorrow at 6 am", "remind me in 5 minutes", "set a timer", "send it at 7pm"]:
             self.assertIn("schedule_email", select_tool_names(names, text, set(), set()), text)
         self.assertNotIn("set_reminder", select_tool_names(names, "i am happy", set(), set()))
+
+
+class KnowledgeRelevanceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = temp_dir()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def sent_text(self, agent, brain, question):
+        agent.handle(question)
+        return brain.calls[-1][0][-1]["content"]
+
+    def test_one_shared_common_word_does_not_attach_knowledge(self):
+        brain = ScriptedBrain()
+        agent = make_agent(self.tmp.name, brain)
+        agent.memory_store.add_knowledge("artificial intelligence",
+                                         "AI is used today in apps; send data, 10 examples.")
+        text = self.sent_text(agent, brain, "send it at 10:10 PM today")
+        self.assertNotIn("learned earlier", text)
+
+    def test_clearly_related_knowledge_is_attached(self):
+        brain = ScriptedBrain()
+        agent = make_agent(self.tmp.name, brain)
+        agent.memory_store.add_knowledge("solar panels", "Panels convert sunlight to power.")
+        self.assertIn("learned earlier", self.sent_text(agent, brain, "how much do solar panels cost?"))
+        self.assertIn("learned earlier", self.sent_text(agent, brain, "does sunlight power them at night?"))
 
 
 class FollowUpTests(unittest.TestCase):

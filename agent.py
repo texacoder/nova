@@ -34,7 +34,7 @@ from tools.routing import select_tool_names
 from tools.self_modify import load_changes, rollback_last_change
 from utils import autostart
 from utils.logger import get_logger
-from utils.text import truncate
+from utils.text import clearly_related, truncate
 
 log = get_logger("agent")
 
@@ -477,7 +477,9 @@ class Agent:
                     "\n".join(f"- [{m.id}] {m.content}" for m in memories))
 
         extra = []
-        knowledge = self.memory_store.search_knowledge(latest_question, limit=3)
+        # Only clearly related knowledge: a loose match derails small models.
+        knowledge = [k for k in self.memory_store.search_knowledge(latest_question, limit=3)
+                     if clearly_related(latest_question, k.topic, k.content)]
         if knowledge:
             extra.append("(Relevant things you learned earlier from the internet:\n" + "\n".join(
                 f"- [K{k.id}] {k.topic}: {truncate(k.content, 1200)} (sources: {k.source})"

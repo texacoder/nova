@@ -15,6 +15,8 @@ MONTH_RE = r"(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*"
 NAMED_TIMES = {"noon": time(12), "midday": time(12), "midnight": time(0), "morning": time(9),
                "afternoon": time(15), "evening": time(18), "tonight": time(20), "night": time(21)}
 DEFAULT_TIME = time(9)  # "on Friday" with no time means 9 am
+# A time that passed this recently (e.g. while you were approving) means "right away".
+GRACE = timedelta(minutes=10)
 
 
 class WhenError(ValueError):
@@ -40,6 +42,9 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
     text = " " + text.lower().strip().strip(".!?") + " "
     text = text.replace(",", " ").replace(" o'clock", "").replace(" oclock", "")
     text = re.sub(r"\s+", " ", text)
+    # "10 :7 pm" / "10:7" -> "10:07"; "10.7 pm" -> "10:07 pm" (but "12.10" alone stays a date)
+    text = re.sub(r"\b(\d{1,2})\s*:\s*(\d{1,2})\b", lambda m: f"{m[1]}:{int(m[2]):02d}", text)
+    text = re.sub(r"\b(\d{1,2})\s*\.\s*(\d{1,2})(?=\s*[ap]\.?m\b)", lambda m: f"{m[1]}:{int(m[2]):02d}", text)
     if re.search(r"\b(yesterday|ago|last)\b", text):
         raise WhenError(f"'{original}' is in the past - I can only schedule things for the future.")
     evening = bool(re.search(r"\b(tonight|evening|night|afternoon)\b", text))
@@ -142,14 +147,18 @@ def parse_when(text: str, now: datetime | None = None) -> datetime:
 
     if day is None:  # only a time: today, or tomorrow if that time has already passed
         moment = datetime.combine(now.date(), clock)
-        if moment <= now:
+        if now - GRACE <= moment < now:
+            return now  # passed a moment ago: do it right away, not tomorrow
+        if moment < now:
             moment += timedelta(days=1)
         return moment
 
     moment = datetime.combine(day, clock or DEFAULT_TIME)
-    if moment <= now and weekday_given:  # "monday" said on a Monday evening = next Monday
+    if now - GRACE <= moment < now:
+        return now  # passed a moment ago (e.g. while you were approving): right away
+    if moment < now and weekday_given:  # "monday" said on a Monday evening = next Monday
         moment += timedelta(days=7)
-    if moment <= now:
+    if moment < now:
         raise WhenError(f"{describe_time(moment, now)} has already passed.")
     return moment
 
@@ -159,8 +168,10 @@ def describe_time(moment: datetime, now: datetime | None = None) -> str:
     now = now or datetime.now()
     text = moment.strftime("%a %d %b %Y, %I:%M %p").replace(" 0", " ")
     seconds = (moment - now).total_seconds()
-    if seconds < 0:
+    if seconds < -60:
         return text
+    if seconds < 60:
+        return f"{text} (right away)"
     if seconds < 3600:
         amount, unit = max(1, round(seconds / 60)), "minute"
     elif seconds < 86400 * 2:
