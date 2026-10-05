@@ -39,11 +39,17 @@ class OllamaHTTPError(BrainError):
 class LocalBrain(Brain):
     """A brain backed by an Ollama server (default http://localhost:11434)."""
 
-    def __init__(self, host: str, model: str, timeout: int = 300, num_ctx: int = 8192):
+    supports_streaming = True
+
+    def __init__(self, host: str, model: str, timeout: int = 300, num_ctx: int = 8192,
+                 keep_alive: str = "30m"):
         self.host = host.rstrip("/")
         self.model = model
         self.timeout = timeout
         self.num_ctx = num_ctx
+        # How long Ollama keeps the model in memory after a request ("30m", "2h", "-1" = forever).
+        # Keeping it loaded avoids a slow reload before the next message.
+        self.keep_alive = int(keep_alive) if keep_alive.lstrip("-").isdigit() else keep_alive
         self.supports_tools = True
 
     @property
@@ -52,7 +58,11 @@ class LocalBrain(Brain):
 
     # --- Brain interface -------------------------------------------------
 
-    def chat(self, messages: list[dict], tools: list[dict] | None = None) -> BrainReply:
+    def chat(self, messages: list[dict], tools: list[dict] | None = None, on_token=None) -> BrainReply:
+        """
+        Ask the model. With `on_token`, the reply is streamed: on_token(text) is called
+        with each new piece of text as the model writes it.
+        """
         validate_messages(messages)
         if not self.model:
             raise BrainUnavailableError("OLLAMA_MODEL is not set.\n" + SETUP_HINT)
@@ -60,7 +70,8 @@ class LocalBrain(Brain):
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": False,
+            "stream": on_token is not None,
+            "keep_alive": self.keep_alive,
             "options": {"num_ctx": self.num_ctx},
         }
         use_tools = bool(tools) and self.supports_tools
@@ -68,16 +79,19 @@ class LocalBrain(Brain):
             payload["tools"] = tools
 
         try:
-            data = self._request("/api/chat", payload)
+            if on_token is not None:
+                message = self._stream_chat(payload, on_token)
+            else:
+                data = self._request("/api/chat", payload)
+                message = data.get("message") if isinstance(data, dict) else None
         except OllamaHTTPError as error:
             if use_tools and "does not support tools" in error.detail:
                 # Older/smaller models can't use tools. Keep chatting without them.
                 log.warning("Model %s does not support tools; continuing without tools", self.model)
                 self.supports_tools = False
-                return self.chat(messages, None)
+                return self.chat(messages, None, on_token)
             raise
 
-        message = data.get("message") if isinstance(data, dict) else None
         if not isinstance(message, dict):
             log.error("Unexpected Ollama response: %r", data)
             raise BrainError("The local model returned a response the assistant did not understand.")
@@ -94,6 +108,61 @@ class LocalBrain(Brain):
                 return BrainReply("", [text_call])
 
         return BrainReply(content, tool_calls)
+
+    def warm_up(self, messages: list[dict], tools: list[dict] | None = None) -> None:
+        """
+        Load the model into memory and let Ollama pre-read the instructions, so the
+        first real message is fast. Generates just one token; errors are ignored.
+        """
+        if not self.model:
+            return
+        payload = {"model": self.model, "messages": messages, "stream": False,
+                   "keep_alive": self.keep_alive, "options": {"num_ctx": self.num_ctx, "num_predict": 1}}
+        if tools and self.supports_tools:
+            payload["tools"] = tools
+        try:
+            self._request("/api/chat", payload)
+            log.info("Model %s warmed up", self.model)
+        except BrainError as error:
+            log.info("Warm-up skipped: %s", error)
+
+    def _stream_chat(self, payload: dict, on_token) -> dict:
+        """Read Ollama's streamed reply piece by piece. Returns the complete message."""
+        text = ""
+        tool_calls: list = []
+        passing_through = None  # unknown until we see how the reply starts
+        try:
+            with self._open("/api/chat", payload) as response:
+                for raw_line in response:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line:
+                        continue
+                    event = json.loads(line)
+                    if "error" in event:
+                        raise BrainError(f"The local model reported an error: {event['error']}")
+                    message = event.get("message") or {}
+                    piece = message.get("content") or ""
+                    tool_calls.extend(message.get("tool_calls") or [])
+                    text += piece
+                    if passing_through is None and text.strip():
+                        # A reply starting like JSON may be a tool call written as text:
+                        # hold it back instead of showing raw JSON to the user.
+                        passing_through = not text.lstrip().startswith(("{", "```json"))
+                        if passing_through:
+                            on_token(text)
+                    elif passing_through and piece:
+                        on_token(piece)
+                    if event.get("done"):
+                        break
+        except json.JSONDecodeError as error:
+            raise BrainError("The local model server sent an invalid response.") from error
+        except TimeoutError as error:
+            raise BrainError(
+                "The local model took too long to answer. Try a smaller model or raise OLLAMA_TIMEOUT."
+            ) from error
+        except OSError as error:
+            raise BrainUnavailableError(f"Lost the connection to Ollama: {error}") from error
+        return {"content": text, "tool_calls": tool_calls}
 
     def health_check(self) -> BrainStatus:
         try:
@@ -150,14 +219,27 @@ class LocalBrain(Brain):
 
     def _request(self, path: str, payload: dict | None = None, timeout: int | None = None) -> dict:
         """GET (no payload) or POST JSON to the Ollama server and return parsed JSON."""
+        try:
+            with self._open(path, payload, timeout) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except TimeoutError as error:
+            log.warning("Ollama timed out at %s", path)
+            raise BrainError(
+                "The local model took too long to answer. Try a smaller model or raise OLLAMA_TIMEOUT."
+            ) from error
+        except json.JSONDecodeError as error:
+            log.error("Invalid JSON from Ollama at %s: %s", path, error)
+            raise BrainError("The local model server sent an invalid response.") from error
+
+    def _open(self, path: str, payload: dict | None = None, timeout: int | None = None):
+        """Send a request to Ollama and return the open response (errors become BrainErrors)."""
         url = self.host + path
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
         request = urllib.request.Request(
             url, data=body, headers={"Content-Type": "application/json"}
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout or self.timeout) as response:
-                return json.loads(response.read().decode("utf-8"))
+            return urllib.request.urlopen(request, timeout=timeout or self.timeout)
         except urllib.error.HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
             log.error("Ollama HTTP %s at %s: %s", error.code, url, detail)
@@ -178,9 +260,6 @@ class LocalBrain(Brain):
             raise BrainUnavailableError(
                 f"Cannot reach Ollama at {self.host}. Is it installed and running?\n" + SETUP_HINT
             ) from error
-        except json.JSONDecodeError as error:
-            log.error("Invalid JSON from Ollama at %s: %s", url, error)
-            raise BrainError("The local model server sent an invalid response.") from error
 
 
 def extract_text_tool_call(content: str, tool_names: set[str]) -> ToolCall | None:

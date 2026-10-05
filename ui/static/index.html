@@ -38,6 +38,22 @@
         <dl id="status-list" class="status-list"></dl>
       </div>
 
+      <div class="panel" id="voice-panel">
+        <h2>Voice</h2>
+        <label class="field">Voice
+          <select id="voice-select" aria-label="Voice"></select>
+        </label>
+        <label class="field">Speed
+          <select id="voice-rate" aria-label="Speaking speed">
+            <option value="0.9">Slow</option>
+            <option value="1.05">Normal</option>
+            <option value="1.25">Fast</option>
+          </select>
+        </label>
+        <button id="voice-test" class="small-btn">Test voice</button>
+        <p id="voice-tip" class="tip" hidden>Tip: open {{NAME}} in Microsoft Edge for natural-sounding voices.</p>
+      </div>
+
       <div class="panel">
         <h2>Quick commands</h2>
         <div class="quick">
@@ -70,6 +86,9 @@
         <textarea id="input" rows="1" placeholder="Talk to {{NAME}}..." title="Enter to send, Shift+Enter for a new line" autocomplete="off"></textarea>
         <button type="button" id="speak" class="icon-btn" title="Voice replies on/off" aria-label="Toggle voice replies" aria-pressed="false">
           <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 10v4h4l5 5V5L7 10H3Zm13.5 2A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4ZM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54Z"/></svg>
+        </button>
+        <button type="button" id="voice-chat" class="icon-btn voice-chat-btn" title="Voice chat: talk hands-free" aria-label="Voice chat" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 10h2v4H3v-4Zm4-3h2v10H7V7Zm4-4h2v18h-2V3Zm4 4h2v10h-2V7Zm4 3h2v4h-2v-4Z"/></svg>
         </button>
         <button type="submit" id="send" class="send-btn">SEND</button>
       </form>

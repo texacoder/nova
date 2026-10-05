@@ -28,6 +28,10 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(config.email_configured)
         self.assertEqual(config.auto_approve, frozenset())
 
+    def test_keep_alive(self):
+        self.assertEqual(load_config(env_file=self.env_file, environ={}).ollama_keep_alive, "30m")
+        self.assertEqual(load_config(env_file=self.env_file, environ={"OLLAMA_KEEP_ALIVE": "-1"}).ollama_keep_alive, "-1")
+
     def test_auto_approve_list(self):
         config = load_config(env_file=self.env_file, environ={"JARVIS_AUTO_APPROVE": "write_file, run_command,"})
         self.assertEqual(config.auto_approve, frozenset({"write_file", "run_command"}))

@@ -68,6 +68,8 @@ class Brain(ABC):
     name = "brain"
     #: Whether this brain can request tools. Brains may switch this off.
     supports_tools = True
+    #: Whether chat() accepts on_token=... to stream the reply as it is written.
+    supports_streaming = False
 
     @abstractmethod
     def chat(self, messages: list[dict], tools: list[dict] | None = None) -> BrainReply:

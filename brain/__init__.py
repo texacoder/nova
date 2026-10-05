@@ -13,7 +13,8 @@ from brain.local import LocalBrain
 def create_brain(config) -> Brain:
     if config.brain == "ollama":
         return LocalBrain(
-            config.ollama_host, config.ollama_model, config.ollama_timeout, config.ollama_num_ctx
+            config.ollama_host, config.ollama_model, config.ollama_timeout, config.ollama_num_ctx,
+            config.ollama_keep_alive,
         )
     raise ValueError(f"Unknown brain: {config.brain!r}")
 

@@ -70,10 +70,15 @@ class ConversationTests(AgentTestCase):
         agent.handle("/remember My store is called EXORASTORE.")
         agent.memory_store.add_knowledge("solar panels", "Panels convert sunlight to power.", "https://x.org")
         agent.handle("How do solar panels work?")
-        system = brain.calls[-1][0][0]["content"]
+        messages = brain.calls[-1][0]
+        system = messages[0]["content"]
         self.assertIn("EXORASTORE", system)
-        self.assertIn("Panels convert sunlight", system)
         self.assertIn("workspace", system)
+        # Knowledge rides on the latest question (keeps the system prompt stable for speed)...
+        self.assertNotIn("Panels convert sunlight", system)
+        self.assertIn("Panels convert sunlight", messages[-1]["content"])
+        # ...but is never saved into the conversation itself.
+        self.assertEqual(agent.conversation.get_messages()[-2]["content"], "How do solar panels work?")
 
     def test_memory_survives_restart(self):
         agent = self.new_agent(MockBrain())
@@ -113,6 +118,65 @@ class ConversationTests(AgentTestCase):
         brain.supports_tools = False
         self.new_agent(brain).handle("hi")
         self.assertIsNone(brain.calls[0][1])
+
+
+class StreamingBrain(ScriptedBrain):
+    """A scripted brain that streams its text in pieces, like Ollama."""
+    supports_streaming = True
+
+    def chat(self, messages, tools=None, on_token=None):
+        reply = super().chat(messages, tools)
+        if on_token and reply.content:
+            for i in range(0, len(reply.content), 5):
+                on_token(reply.content[i:i + 5])
+        return reply
+
+
+class SpeedAndVoiceTests(AgentTestCase):
+    def test_live_events_while_working(self):
+        brain = StreamingBrain(BrainReply("Let me check.", [ToolCall("get_datetime", {})]),
+                               BrainReply("It is Monday today."))
+        events = []
+        reply = self.new_agent(brain).handle("what day is it?", on_event=events.append)
+        kinds = [e["type"] for e in events]
+        self.assertEqual(kinds[0], "token")
+        self.assertIn("reset", kinds)                 # "Let me check." wasn't the final answer
+        step = next(e for e in events if e["type"] == "step")
+        self.assertEqual((step["tool"], step["status"]), ("get_datetime", "ok"))
+        after_step = "".join(e["text"] for e in events[events.index(step):] if e["type"] == "token")
+        self.assertEqual(after_step, "It is Monday today.")
+        self.assertEqual(reply.text, "It is Monday today.")
+
+    def test_no_events_needed(self):
+        reply = self.new_agent(StreamingBrain(BrainReply("Hi."))).handle("hello")
+        self.assertEqual(reply.text, "Hi.")
+
+    def test_system_prompt_is_stable_for_speed(self):
+        import re
+        brain = ScriptedBrain()
+        agent = self.new_agent(brain)
+        agent.handle("first question")
+        agent.handle("second question about something else")
+        first_system, second_system = brain.calls[0][0][0]["content"], brain.calls[1][0][0]["content"]
+        self.assertEqual(first_system, second_system)
+        self.assertIsNone(re.search(r"\b\d{1,2}:\d{2}\b", first_system))  # no clock time in it
+
+    def test_voice_mode_asks_for_short_spoken_answers(self):
+        brain = ScriptedBrain()
+        agent = self.new_agent(brain)
+        agent.handle("what's the weather like on Mars?", voice=True)
+        self.assertIn("by voice", brain.calls[-1][0][-1]["content"])
+        agent.handle("and on Venus?")
+        self.assertNotIn("by voice", brain.calls[-1][0][-1]["content"])
+        self.assertNotIn("by voice", str(agent.conversation.get_messages()))
+
+    def test_warm_up_uses_the_real_instructions(self):
+        brain = ScriptedBrain()
+        brain.warm_up = mock.Mock()
+        self.new_agent(brain).warm_up()
+        messages, tools = brain.warm_up.call_args[0]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertTrue(tools)
 
 
 class CommandTests(AgentTestCase):

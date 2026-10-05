@@ -31,6 +31,7 @@ DEFAULTS = {
     "OLLAMA_MODEL": "",
     "OLLAMA_TIMEOUT": "300",
     "OLLAMA_NUM_CTX": "8192",
+    "OLLAMA_KEEP_ALIVE": "30m",
     # Storage, personality, logging
     "JARVIS_DATA_DIR": "data",
     "JARVIS_PERSONALITY_FILE": "personality/jarvis.txt",
@@ -71,6 +72,7 @@ class Config:
     ollama_model: str
     ollama_timeout: int
     ollama_num_ctx: int
+    ollama_keep_alive: str
     data_dir: Path
     personality_file: Path
     log_level: str
@@ -224,6 +226,7 @@ def load_config(env_file: Path | None = None, environ: dict | None = None) -> Co
         ollama_model=settings["OLLAMA_MODEL"].strip(),
         ollama_timeout=_to_int(settings, "OLLAMA_TIMEOUT", minimum=1),
         ollama_num_ctx=_to_int(settings, "OLLAMA_NUM_CTX", minimum=512),
+        ollama_keep_alive=settings["OLLAMA_KEEP_ALIVE"].strip() or "30m",
         data_dir=_to_path(settings["JARVIS_DATA_DIR"]),
         personality_file=_to_path(settings["JARVIS_PERSONALITY_FILE"]),
         log_level=log_level,

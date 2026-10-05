@@ -69,6 +69,8 @@ def build_agent():
     if agent.setup:
         # Start an installed-but-stopped Ollama and pick an installed model, silently.
         agent.setup.quick_start()
+    # Load the model in the background now, so the first reply doesn't wait for it.
+    threading.Thread(target=agent.warm_up, daemon=True).start()
     return config, agent
 
 

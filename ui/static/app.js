@@ -12,8 +12,14 @@ const statePill = $("state-pill");
 
 let busy = false;
 let NAME = document.querySelector(".brand-name").textContent.trim();
-let speakReplies = false;
-try { speakReplies = localStorage.getItem("jarvis-speak") === "1"; } catch (e) { /* storage blocked */ }
+
+function loadSetting(key, fallback) {
+  try { return localStorage.getItem(key) ?? fallback; } catch (e) { return fallback; }
+}
+function saveSetting(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* storage blocked */ }
+}
+let speakReplies = loadSetting("jarvis-speak", "0") === "1";
 
 // ---------- server calls ----------
 
@@ -29,6 +35,36 @@ async function api(path, body) {
   return data;
 }
 
+// Streamed request: the server sends one JSON object per line while JARVIS works.
+async function streamRequest(path, body, onEvent) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "X-Jarvis-Token": TOKEN, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let reply = null;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let newline;
+    while ((newline = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      const event = JSON.parse(line);
+      if (event.type === "done") reply = event.reply;
+      else onEvent(event);
+    }
+  }
+  if (!reply) throw new Error("the reply was cut off");
+  return reply;
+}
+
 // ---------- visual state ----------
 
 function setState(state, label) {
@@ -37,13 +73,14 @@ function setState(state, label) {
   statePill.className = "pill" + (state === "waiting" ? " warn" : state === "offline" ? " bad" : "");
   statePill.textContent = {
     idle: "ONLINE", thinking: "PROCESSING", waiting: "AWAITING APPROVAL",
-    offline: "BRAIN OFFLINE", listening: "LISTENING",
+    offline: "BRAIN OFFLINE", listening: "LISTENING", speaking: "SPEAKING",
   }[state] || state.toUpperCase();
 }
 
 let brainOk = true;
 function idleState() {
-  if (brainOk) setState("idle", "Standing by");
+  if (voice.active) setState("listening", "Voice chat on");
+  else if (brainOk) setState("idle", "Standing by");
   else setState("offline", "Brain offline - see System");
 }
 
@@ -78,16 +115,24 @@ function formatText(raw) {
   }).join("");
 }
 
-function addMessage(who, text, steps) {
+function messageShell(who) {
   const wrapper = document.createElement("div");
   wrapper.className = "msg " + who;
   const label = document.createElement("div");
   label.className = "who";
   label.textContent = who === "user" ? "YOU" : who === "jarvis" ? NAME.toUpperCase() : "SYSTEM";
   wrapper.appendChild(label);
+  return wrapper;
+}
 
-  if (steps && steps.length) wrapper.appendChild(renderSteps(steps));
-
+function addMessage(who, text, steps) {
+  const wrapper = messageShell(who);
+  if (steps && steps.length) {
+    const box = document.createElement("div");
+    box.className = "steps";
+    steps.forEach((step) => box.appendChild(renderStep(step)));
+    wrapper.appendChild(box);
+  }
   if (text) {
     const body = document.createElement("div");
     body.className = "body";
@@ -99,25 +144,20 @@ function addMessage(who, text, steps) {
   return wrapper;
 }
 
-function renderSteps(steps) {
-  const box = document.createElement("div");
-  box.className = "steps";
-  for (const step of steps) {
-    const details = document.createElement("details");
-    details.className = "step";
-    const summary = document.createElement("summary");
-    const mark = document.createElement("span");
-    mark.className = "mark-" + step.status;
-    mark.textContent = step.status === "ok" ? "✓ " : step.status === "declined" ? "⊘ " : "✗ ";
-    summary.appendChild(mark);
-    summary.appendChild(document.createTextNode(`${step.tool}  ${shortArgs(step.arguments)}`));
-    const pre = document.createElement("pre");
-    pre.textContent = step.result;
-    details.appendChild(summary);
-    details.appendChild(pre);
-    box.appendChild(details);
-  }
-  return box;
+function renderStep(step) {
+  const details = document.createElement("details");
+  details.className = "step";
+  const summary = document.createElement("summary");
+  const mark = document.createElement("span");
+  mark.className = "mark-" + step.status;
+  mark.textContent = step.status === "ok" ? "✓ " : step.status === "declined" ? "⊘ " : "✗ ";
+  summary.appendChild(mark);
+  summary.appendChild(document.createTextNode(`${step.tool}  ${shortArgs(step.arguments)}`));
+  const pre = document.createElement("pre");
+  pre.textContent = step.result;
+  details.appendChild(summary);
+  details.appendChild(pre);
+  return details;
 }
 
 function shortArgs(args) {
@@ -125,52 +165,88 @@ function shortArgs(args) {
   return text.length > 90 ? text.slice(0, 90) + "…" : text;
 }
 
-function showTyping() {
-  const el = document.createElement("div");
-  el.className = "msg jarvis";
-  el.innerHTML = '<div class="body typing"><span></span><span></span><span></span></div>';
-  messagesEl.appendChild(el);
+// A reply that fills in live while JARVIS is writing it.
+function createLiveReply() {
+  const wrapper = messageShell("jarvis");
+  const steps = document.createElement("div");
+  steps.className = "steps";
+  const body = document.createElement("div");
+  body.className = "body typing";
+  body.innerHTML = "<span></span><span></span><span></span>";
+  wrapper.append(steps, body);
+  messagesEl.appendChild(wrapper);
   messagesEl.scrollTop = messagesEl.scrollHeight;
-  return el;
+  let text = "";
+
+  return {
+    gotText: false,
+    handle(event) {
+      if (event.type === "token") {
+        if (!text) {
+          body.className = "body live";
+          body.textContent = "";
+          setState(voice.active || speakReplies ? "speaking" : "thinking", "Responding");
+        }
+        text += event.text;
+        this.gotText = true;
+        body.textContent = text;
+        speaker.feed(text);
+      } else if (event.type === "reset") {
+        text = "";
+        this.gotText = false;
+        speaker.reset();
+        body.className = "body typing";
+        body.innerHTML = "<span></span><span></span><span></span>";
+      } else if (event.type === "step") {
+        steps.appendChild(renderStep(event));
+      }
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    },
+    remove() { wrapper.remove(); },
+  };
 }
 
 // ---------- conversation flow ----------
 
-async function send(text) {
+async function send(text, options = {}) {
   text = text.trim();
   if (!text || busy) return;
   addMessage("user", text);
-  await run(() => api("/api/message", { text }));
+  await run("/api/message/stream", { text, voice: Boolean(options.voice) });
 }
 
 async function answerApproval(approve) {
   $("confirm").hidden = true;
   addMessage("system", approve ? "Action approved." : "Action denied.");
-  await run(() => api("/api/confirm", { approve }));
+  await run("/api/confirm/stream", { approve });
 }
 
-async function run(request) {
+async function run(path, body) {
   busy = true;
   sendBtn.disabled = true;
   setState("thinking", "Processing");
-  const typing = showTyping();
+  speaker.reset();
+  const live = createLiveReply();
   try {
-    const reply = await request();
-    typing.remove();
-    handleReply(reply);
+    const reply = await streamRequest(path, body, (event) => live.handle(event));
+    live.remove();
+    handleReply(reply, live.gotText);
   } catch (error) {
-    typing.remove();
+    live.remove();
+    speaker.stop();
     addMessage("system", "Lost contact with " + NAME + ". Is the program still running? (" + error.message + ")");
     setState("offline", "Connection lost");
+    voice.stop();
   } finally {
     busy = false;
     sendBtn.disabled = false;
-    inputEl.focus();
+    if (!voice.active) inputEl.focus();
   }
 }
 
-function handleReply(reply) {
+function handleReply(reply, alreadySpoken) {
   if (reply.pending) {
+    speaker.stop();
     if (reply.steps && reply.steps.length) addMessage("jarvis", "", reply.steps);
     $("confirm-text").textContent = reply.pending.description;
     $("confirm").hidden = false;
@@ -179,24 +255,29 @@ function handleReply(reply) {
     return;
   }
   addMessage("jarvis", reply.text, reply.steps);
-  if (reply.text) speak(reply.text);
+  if (alreadySpoken) speaker.finish(reply.text);
+  else speaker.speakAll(reply.text);
   if (reply.text && reply.text.startsWith("Setting up my brain")) {
     showSetupCard(true);
     pollSetup();
   }
   if (reply.restart) {
+    voice.stop();
     setState("thinking", "Restarting");
     addMessage("system", "Restarting " + NAME + "... this page will reconnect by itself.");
     waitForRestart();
     return;
   }
   if (reply.exit) {
+    voice.stop();
     addMessage("system", NAME + " has shut down. You can close this tab.");
     setState("offline", "Shut down");
     return;
   }
-  idleState();
+  if (!speaker.busy()) idleState();
   refreshStatus();
+  // Listen for the next question once JARVIS has finished speaking (after this request settles).
+  speaker.whenDone(() => setTimeout(() => voice.listenAgain(), 300));
 }
 
 async function refreshStatus() {
@@ -213,7 +294,7 @@ async function refreshStatus() {
       dd.textContent = value;
       list.append(dt, dd);
     }
-    if (!busy) idleState();
+    if (!busy && !speaker.busy() && !voice.listening) idleState();
     return data;
   } catch (error) {
     brainOk = false;
@@ -312,70 +393,260 @@ async function startSetup() {
   pollSetup();
 }
 
-// ---------- voice ----------
+// ---------- speaking replies (sentence by sentence, while JARVIS is still writing) ----------
 
-function speak(text) {
-  if (!speakReplies || !("speechSynthesis" in window)) return;
-  const clean = text.replace(/```[\s\S]*?```/g, " (code shown on screen) ").replace(/https?:\/\/\S+/g, "link").slice(0, 1200);
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(clean);
-  utterance.rate = 1.02;
-  utterance.pitch = 0.95;
-  window.speechSynthesis.speak(utterance);
+// Turn reply text into something pleasant to hear: no code, links or markdown symbols.
+function speakableText(text) {
+  const parts = text.split("```");
+  let result = "";
+  parts.forEach((part, i) => {
+    if (i % 2 === 0) result += part;
+    else if (i < parts.length - 1) result += " The code is shown on screen. ";
+    // an unfinished code block (still being written) is skipped for now
+  });
+  return result
+    .replace(/https?:\/\/\S+/g, "the link on screen")
+    .replace(/[*_#>`|]/g, "")
+    .replace(/\[(\d+)\]/g, "");
 }
 
-function setupVoice() {
-  const speakBtn = $("speak");
-  speakBtn.setAttribute("aria-pressed", String(speakReplies));
-  if (!("speechSynthesis" in window)) speakBtn.hidden = true;
-  speakBtn.addEventListener("click", () => {
-    speakReplies = !speakReplies;
-    speakBtn.setAttribute("aria-pressed", String(speakReplies));
-    try { localStorage.setItem("jarvis-speak", speakReplies ? "1" : "0"); } catch (e) { /* ignore */ }
-    if (!speakReplies && "speechSynthesis" in window) window.speechSynthesis.cancel();
-  });
+const speaker = {
+  supported: "speechSynthesis" in window,
+  spokenUpTo: 0,
+  queued: 0,
+  doneCallbacks: [],
 
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const micBtn = $("mic");
-  if (!Recognition) {
-    micBtn.hidden = true;  // e.g. Firefox: no built-in speech recognition
-    return;
-  }
-  const recognition = new Recognition();
-  recognition.lang = navigator.language || "en-US";
-  recognition.interimResults = true;
-  let listening = false;
+  enabled() { return this.supported && (speakReplies || voice.active); },
 
-  recognition.onresult = (event) => {
-    let transcript = "";
-    for (const result of event.results) transcript += result[0].transcript;
-    inputEl.value = transcript;
-    autoGrow();
-    if (event.results[event.results.length - 1].isFinal) {
-      recognition.stop();
-      send(inputEl.value);
+  reset() { this.spokenUpTo = 0; },
+
+  stop() {
+    if (this.supported) window.speechSynthesis.cancel();
+    this.queued = 0;
+    this.spokenUpTo = 0;
+    this.doneCallbacks = [];
+  },
+
+  busy() { return this.queued > 0; },
+
+  // Called with the full text so far: speak every complete sentence not spoken yet.
+  feed(fullText) {
+    if (!this.enabled()) return;
+    const clean = speakableText(fullText);
+    const rest = clean.slice(this.spokenUpTo);
+    const match = rest.match(/^[\s\S]*[.!?:;](?=\s)|^[\s\S]*\n/);
+    if (match && match[0].trim().length > 1) {
+      this.say(match[0]);
+      this.spokenUpTo += match[0].length;
+    }
+  },
+
+  // The reply is complete: speak whatever is left.
+  finish(fullText) {
+    if (!this.enabled()) return;
+    const rest = speakableText(fullText).slice(this.spokenUpTo);
+    if (rest.trim()) this.say(rest);
+    this.spokenUpTo = 0;
+  },
+
+  speakAll(text) {
+    this.spokenUpTo = 0;
+    this.finish(text || "");
+  },
+
+  say(text) {
+    const utterance = new SpeechSynthesisUtterance(text.trim());
+    const chosen = voicePicker.selectedVoice();
+    if (chosen) {
+      utterance.voice = chosen;
+      utterance.lang = chosen.lang;
+    }
+    utterance.rate = Number(loadSetting("jarvis-rate", "1.05"));
+    const finished = () => {
+      this.queued = Math.max(0, this.queued - 1);
+      if (this.queued === 0) {
+        const callbacks = this.doneCallbacks;
+        this.doneCallbacks = [];
+        if (!busy) idleState();
+        callbacks.forEach((callback) => callback());
+      }
+    };
+    utterance.onend = finished;
+    utterance.onerror = finished;
+    this.queued += 1;
+    if (!busy) setState("speaking", "Speaking");
+    window.speechSynthesis.speak(utterance);
+  },
+
+  // Run `callback` once everything queued has been spoken (immediately if silent).
+  whenDone(callback) {
+    if (this.queued === 0) callback();
+    else this.doneCallbacks.push(callback);
+  },
+};
+
+// ---------- choosing the voice ----------
+
+const voicePicker = {
+  select: $("voice-select"),
+  voices: [],
+
+  load() {
+    if (!speaker.supported) {
+      $("voice-panel").hidden = true;
+      return;
+    }
+    const all = window.speechSynthesis.getVoices();
+    if (!all.length) return;  // Chrome loads voices a moment later
+    const language = (navigator.language || "en").slice(0, 2);
+    const score = (v) => (v.lang.startsWith(language) ? 4 : 0) + (/natural|neural/i.test(v.name) ? 2 : 0) +
+      (/google|microsoft/i.test(v.name) ? 1 : 0);
+    this.voices = all.slice().sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
+    const saved = loadSetting("jarvis-voice", "");
+    this.select.innerHTML = "";
+    for (const v of this.voices) {
+      const option = document.createElement("option");
+      option.value = v.name;
+      option.textContent = `${v.name} (${v.lang})`;
+      this.select.appendChild(option);
+    }
+    this.select.value = this.voices.some((v) => v.name === saved) ? saved : this.voices[0].name;
+    const natural = this.voices.some((v) => /natural|neural/i.test(v.name));
+    $("voice-tip").hidden = natural;
+    $("voice-rate").value = loadSetting("jarvis-rate", "1.05");
+  },
+
+  selectedVoice() {
+    return this.voices.find((v) => v.name === this.select.value) || null;
+  },
+
+  setup() {
+    this.load();
+    if (speaker.supported) window.speechSynthesis.onvoiceschanged = () => this.load();
+    this.select.addEventListener("change", () => saveSetting("jarvis-voice", this.select.value));
+    $("voice-rate").addEventListener("change", (event) => saveSetting("jarvis-rate", event.target.value));
+    $("voice-test").addEventListener("click", () => {
+      speaker.stop();
+      const wasEnabled = speakReplies;
+      speakReplies = true;
+      speaker.speakAll(`Hello. I'm ${NAME}. This is how I sound.`);
+      speakReplies = wasEnabled;
+    });
+  },
+};
+
+// ---------- listening: dictation (mic button) and hands-free voice chat ----------
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+const voice = {
+  active: false,       // voice chat mode is on
+  listening: false,
+  recognition: null,
+  silentRounds: 0,
+  dictation: false,    // one-off dictation from the mic button
+
+  setup() {
+    if (!Recognition) {
+      $("mic").hidden = true;          // e.g. Firefox: no built-in speech recognition
+      $("voice-chat").hidden = true;
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = navigator.language || "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    this.recognition = recognition;
+    let heard = "";
+
+    recognition.onstart = () => {
+      this.listening = true;
+      heard = "";
+      setState("listening", this.active ? "Listening... speak now" : "Listening");
+    };
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (const result of event.results) transcript += result[0].transcript;
+      heard = transcript;
+      inputEl.value = transcript;
+      autoGrow();
+    };
+    recognition.onerror = (event) => {
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        addMessage("system", "Microphone access was blocked. Allow the microphone for this page " +
+          "(click the icon in the address bar), then try again.");
+        this.stop();
+      } else if (event.error === "network") {
+        addMessage("system", "Voice recognition needs an internet connection in this browser. You can still type.");
+        this.stop();
+      }
+    };
+    recognition.onend = () => {
+      this.listening = false;
+      $("mic").classList.remove("recording");
+      const text = heard.trim();
       inputEl.value = "";
       autoGrow();
-    }
-  };
-  recognition.onend = () => {
-    listening = false;
-    micBtn.classList.remove("recording");
+      if (text) {
+        this.silentRounds = 0;
+        this.dictation = false;
+        send(text, { voice: this.active });
+      } else if (this.active && this.silentRounds < 3) {
+        this.silentRounds += 1;
+        setTimeout(() => this.listenAgain(), 250);  // nothing heard yet: keep listening
+      } else {
+        if (this.active) addMessage("system", "Voice chat paused because I didn't hear anything. Click the voice chat button to continue.");
+        this.stop();
+      }
+    };
+
+    $("mic").addEventListener("click", () => {
+      if (this.listening) { recognition.stop(); return; }
+      speaker.stop();
+      this.dictation = true;
+      $("mic").classList.add("recording");
+      this.start();
+    });
+    $("voice-chat").addEventListener("click", () => (this.active ? this.stop() : this.begin()));
+    // Click the glowing core to interrupt JARVIS while it speaks.
+    coreEl.addEventListener("click", () => {
+      if (speaker.busy()) {
+        speaker.stop();
+        if (this.active) this.listenAgain();
+        else idleState();
+      }
+    });
+  },
+
+  begin() {
+    this.active = true;
+    this.silentRounds = 0;
+    $("voice-chat").classList.add("active");
+    $("voice-chat").setAttribute("aria-pressed", "true");
+    addMessage("system", "Voice chat on. Speak after the core turns green. Click the voice chat button again to stop, or the core to interrupt.");
+    this.start();
+  },
+
+  stop() {
+    const wasActive = this.active;
+    this.active = false;
+    $("voice-chat").classList.remove("active");
+    $("voice-chat").setAttribute("aria-pressed", "false");
+    if (this.listening && this.recognition) this.recognition.abort();
+    if (wasActive) speaker.stop();
     if (!busy) idleState();
-  };
-  recognition.onerror = (event) => {
-    if (event.error !== "no-speech" && event.error !== "aborted") {
-      addMessage("system", "Voice input error: " + event.error);
-    }
-  };
-  micBtn.addEventListener("click", () => {
-    if (listening) { recognition.stop(); return; }
-    listening = true;
-    micBtn.classList.add("recording");
-    setState("listening", "Listening");
-    recognition.start();
-  });
-}
+  },
+
+  start() {
+    if (!this.recognition || this.listening || busy) return;
+    try { this.recognition.start(); } catch (error) { /* already starting */ }
+  },
+
+  // After JARVIS has finished replying (and speaking), listen for the next question.
+  listenAgain() {
+    if (this.active && !busy && $("confirm").hidden && !speaker.busy()) this.start();
+  },
+};
 
 // ---------- input ----------
 
@@ -405,13 +676,27 @@ $("approve").addEventListener("click", () => answerApproval(true));
 $("setup-btn").addEventListener("click", startSetup);
 $("deny").addEventListener("click", () => answerApproval(false));
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !$("confirm").hidden) answerApproval(false);
+  if (event.key !== "Escape") return;
+  if (!$("confirm").hidden) answerApproval(false);
+  else if (voice.active) voice.stop();
+  else if (speaker.busy()) { speaker.stop(); idleState(); }
+});
+
+const speakBtn = $("speak");
+speakBtn.setAttribute("aria-pressed", String(speakReplies));
+if (!speaker.supported) speakBtn.hidden = true;
+speakBtn.addEventListener("click", () => {
+  speakReplies = !speakReplies;
+  speakBtn.setAttribute("aria-pressed", String(speakReplies));
+  saveSetting("jarvis-speak", speakReplies ? "1" : "0");
+  if (!speakReplies && !voice.active) speaker.stop();
 });
 
 // ---------- start ----------
 
 (async function start() {
-  setupVoice();
+  voice.setup();
+  voicePicker.setup();
   const data = await refreshStatus();
   if (!data) return;
   const name = data.name;

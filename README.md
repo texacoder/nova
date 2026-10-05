@@ -172,10 +172,27 @@ Apps listed in `apps.json` count as trusted and open without asking.
 
 For Outlook or other providers, also set `SMTP_HOST`, `SMTP_PORT`, and `IMAP_HOST`. Your password stays in your local `.env`, which git ignores. JARVIS always shows you the full email before sending.
 
-## Voice
+## Voice chat
 
-- **Voice replies:** click the speaker button. This uses your browser's built-in text-to-speech, which runs offline.
-- **Voice input:** click the microphone (Chrome or Edge). The browser's speech recognition is free, but Chrome and Edge send the audio to Google's or Microsoft's servers to convert it to text. If you don't want that, just type. Firefox doesn't support voice input, so the mic button is hidden there.
+Use **Microsoft Edge** (best voices) or Chrome.
+
+| Button | What it does |
+|---|---|
+| **Voice chat** (sound-wave button, turns green) | Hands-free conversation: speak, JARVIS answers out loud, then listens again. Click it again (or press Esc) to stop. |
+| **Speaker** | Read typed replies out loud too |
+| **Microphone** | Dictate one message instead of typing |
+| **The glowing core** | Click it while JARVIS is speaking to interrupt |
+
+- JARVIS starts speaking while it's still writing, sentence by sentence. It skips code and links ("the code is shown on screen").
+- In voice chat, JARVIS answers in a few short sentences, which is also faster.
+- Pick the voice and speed in the **Voice** panel. Edge offers free natural-sounding voices (e.g. "Microsoft Ava Online (Natural)").
+- **Privacy:** voices are produced by your browser. Speech *recognition* in Chrome and Edge is done by Google's or Microsoft's servers, so if you'd rather not send audio, type instead. Firefox has no speech recognition, so the voice buttons are hidden there.
+
+## Speed
+
+- **Streaming:** replies appear word by word as they're written.
+- **The brain stays loaded:** JARVIS loads the model when it starts and asks Ollama to keep it in memory for `OLLAMA_KEEP_ALIVE` (default 30 minutes; `-1` = always).
+- **Less repeated work:** the instructions JARVIS sends stay identical between messages, so Ollama can reuse its earlier work instead of re-reading them every time.
 
 ## How memory and learning work
 
@@ -224,6 +241,7 @@ All settings live in `.env`; see `.env.example` for descriptions. The most usefu
 |---|---|---|
 | `OLLAMA_MODEL` | *(set by automatic setup)* | Model to use, e.g. `qwen2.5:7b` |
 | `OLLAMA_NUM_CTX` | `8192` | Context size. Lower it (4096) if replies are slow |
+| `OLLAMA_KEEP_ALIVE` | `30m` | How long the model stays in memory after a message (`-1` = always) |
 | `OLLAMA_TIMEOUT` | `300` | Seconds to wait for the model |
 | `JARVIS_WORKSPACE` | `~/JARVIS_Workspace` | JARVIS's own folder |
 | `JARVIS_AUTO_APPROVE` | *(empty)* | Tools that skip approval |

@@ -7,6 +7,9 @@ It serves the page in ui/static/ and a JSON API the page talks to:
     GET  /api/memories   -> saved memories and learned knowledge
     POST /api/message    -> {"text": "..."}      send a message / command
     POST /api/confirm    -> {"approve": true}     answer a pending approval
+    POST /api/message/stream, /api/confirm/stream
+                         -> same, but the reply streams in as it's written
+                            (one JSON object per line; the last is {"type": "done", ...})
     GET  /api/setup      -> progress of the automatic brain setup
     POST /api/setup      -> start the automatic brain setup
 
@@ -97,13 +100,46 @@ class JarvisWebServer:
                     "knowledge": [vars(k) for k in store.list_knowledge()],
                 }
             if method == "POST" and path == "/api/message":
-                reply = agent.handle(str(body.get("text", "")))
+                reply = agent.handle(str(body.get("text", "")), voice=bool(body.get("voice")))
                 if reply.exit:
                     threading.Thread(target=self.shutdown, daemon=True).start()
                 return reply.to_dict()
             if method == "POST" and path == "/api/confirm":
                 return agent.resolve_pending(bool(body.get("approve"))).to_dict()
         raise LookupError(path)
+
+    def _stream(self, handler, path: str, body: dict) -> None:
+        """Run the agent and send its live updates as they happen (newline-delimited JSON)."""
+        handler.send_response(HTTPStatus.OK)
+        handler.send_header("Content-Type", "application/x-ndjson")
+        handler.send_header("Cache-Control", "no-store")
+        handler.send_header("X-Content-Type-Options", "nosniff")
+        handler.end_headers()
+
+        def write(event: dict) -> None:
+            handler.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
+            handler.wfile.flush()
+
+        try:
+            with self.lock:
+                if path == "/api/message/stream":
+                    reply = self.agent.handle(str(body.get("text", "")), on_event=write,
+                                              voice=bool(body.get("voice")))
+                else:
+                    reply = self.agent.resolve_pending(bool(body.get("approve")), on_event=write)
+            if reply.exit:
+                threading.Thread(target=self.shutdown, daemon=True).start()
+            write({"type": "done", "reply": reply.to_dict()})
+        except (BrokenPipeError, ConnectionResetError):
+            log.info("Browser disconnected during a streamed reply")
+        except Exception:
+            log.exception("Streaming error on %s", path)
+            try:
+                write({"type": "done", "reply": {
+                    "text": f"Something unexpected went wrong. Details are in {self.config.log_file}.",
+                    "steps": [], "pending": None, "exit": False, "restart": False}})
+            except OSError:
+                pass
 
     def _make_handler(self):
         server = self
@@ -168,6 +204,9 @@ class JarvisWebServer:
                     if not isinstance(body, dict):
                         body = {}
 
+                if method == "POST" and path in ("/api/message/stream", "/api/confirm/stream"):
+                    server._stream(self, path, body)
+                    return
                 try:
                     self._send_json(HTTPStatus.OK, server._api(method, path, body))
                 except LookupError:

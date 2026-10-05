@@ -42,6 +42,9 @@ NUDGE_SKILL = ("(Automatic note from the system: you wrote skill code as text, b
                "installed. Call the create_skill tool now with the complete, corrected code. Don't "
                "show code to the user instead of calling the tool.)")
 
+VOICE_NOTE = ("(The user is talking to you by voice and will hear your reply spoken aloud: answer in "
+              "1-3 short, natural sentences. No lists, tables, links or code unless they ask for them.)")
+
 YES = {"yes", "y", "approve", "ok", "sure"}
 NO = {"no", "n", "deny", "cancel"}
 
@@ -116,6 +119,8 @@ class Agent:
         self._steps: list[dict] = []         # tools that ran this turn
         self._rounds = 0                     # brain calls this turn
         self._nudges = 0                     # self-corrections requested this turn
+        self._on_event = None                # where to send live updates (streaming)
+        self._voice = False                  # this turn came from voice chat
         self._awaiting_clear_confirmation = False
         # Automatic brain installer (only for the real local brain).
         self.setup = SetupManager(brain, config.env_file) if isinstance(brain, LocalBrain) else None
@@ -145,8 +150,17 @@ class Agent:
 
     # --- entry points -----------------------------------------------------
 
-    def handle(self, user_input: str) -> AgentReply:
-        """Process one message from the user."""
+    def handle(self, user_input: str, on_event=None, voice: bool = False) -> AgentReply:
+        """
+        Process one message from the user.
+
+        on_event(dict) receives live updates while JARVIS works:
+          {"type": "token", "text": ...}  a new piece of the reply as it's written
+          {"type": "reset"}               discard the text streamed so far
+          {"type": "step", ...}           a tool finished
+        voice=True asks for short, speakable answers (voice chat).
+        """
+        self._on_event, self._voice = on_event, voice
         text = user_input.strip()
         if not text:
             return AgentReply("")
@@ -174,8 +188,9 @@ class Agent:
         self._queue, self._steps, self._rounds, self._nudges = [], [], 0, 0
         return self._continue()
 
-    def resolve_pending(self, approved: bool) -> AgentReply:
+    def resolve_pending(self, approved: bool, on_event=None) -> AgentReply:
         """Approve or decline the action JARVIS is waiting on, then carry on."""
+        self._on_event = on_event
         if not self.pending:
             return AgentReply("There is nothing waiting for approval.")
         call = self._queue.pop(0)
@@ -197,11 +212,12 @@ class Agent:
             correction: list[dict] = []  # temporary messages asking the model to fix a slip
             while self._rounds < self.config.max_tool_steps:
                 self._rounds += 1
-                reply = self.brain.chat(self.build_messages() + correction, self._tool_schemas())
+                reply = self._ask_brain(self.build_messages() + correction)
                 correction = []
                 if not reply.tool_calls:
                     nudge = self._needs_nudge(reply.content)
                     if nudge and self._nudges < MAX_NUDGES:
+                        self._emit({"type": "reset"})
                         self._nudges += 1
                         log.info("Asking the model to correct itself: %s", nudge[:60])
                         if reply.content:
@@ -212,6 +228,7 @@ class Agent:
                     self.conversation.add("assistant", text)
                     return AgentReply(text, self._steps)
 
+                self._emit({"type": "reset"})  # text before tool calls isn't the final answer
                 self.conversation.add(
                     "assistant", reply.content,
                     tool_calls=[call.to_message_format() for call in reply.tool_calls],
@@ -241,6 +258,26 @@ class Agent:
         except MemoryStoreError as error:
             return AgentReply(str(error), self._steps)
 
+    def _emit(self, event: dict) -> None:
+        if self._on_event:
+            try:
+                self._on_event(event)
+            except Exception:  # a disconnected browser must not break the agent
+                log.debug("Could not deliver live update", exc_info=True)
+
+    def _ask_brain(self, messages: list[dict]):
+        """Call the brain, streaming its words to the interface when possible."""
+        if self._on_event and self.brain.supports_streaming:
+            return self.brain.chat(messages, self._tool_schemas(),
+                                   on_token=lambda text: self._emit({"type": "token", "text": text}))
+        return self.brain.chat(messages, self._tool_schemas())
+
+    def warm_up(self) -> None:
+        """Load the model and pre-read the instructions so the first reply is fast."""
+        if hasattr(self.brain, "warm_up") and self.brain.health_check().ok:
+            self.brain.warm_up(self.build_messages() + [{"role": "user", "content": "Hello"}],
+                               self._tool_schemas())
+
     def _run_queue(self) -> bool:
         """Run queued tool calls. Returns True if one is waiting for approval."""
         while self._queue:
@@ -260,12 +297,14 @@ class Agent:
 
     def _record(self, call: ToolCall, result: str, status: str) -> None:
         self.conversation.add("tool", result, tool_name=call.name)
-        self._steps.append({
+        step = {
             "tool": call.name,
             "arguments": call.arguments,
             "status": status,
             "result": truncate(result, 800),
-        })
+        }
+        self._steps.append(step)
+        self._emit({"type": "step", **step})
 
     def _needs_nudge(self, text: str) -> str | None:
         """Spot common model slips that it can fix itself if asked."""
@@ -288,7 +327,14 @@ class Agent:
     # --- context ----------------------------------------------------------
 
     def build_messages(self) -> list[dict]:
-        """The full context sent to the brain: system prompt + recent conversation."""
+        """
+        The full context sent to the brain: system prompt + recent conversation.
+
+        For speed, the system prompt only contains things that rarely change, so
+        Ollama can reuse its work from the previous message instead of re-reading
+        thousands of words. Per-question context (relevant knowledge, voice mode)
+        is attached to the latest user message instead.
+        """
         history = self.conversation.get_messages()
         latest_question = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
 
@@ -310,11 +356,17 @@ class Agent:
                 sections.append("Things you remember about the user:\n" +
                                 "\n".join(f"- [{m.id}] {m.content}" for m in memories))
 
+        extra = []
         knowledge = self.memory_store.search_knowledge(latest_question, limit=3)
         if knowledge:
-            sections.append("Relevant things you learned earlier (from the internet):\n" + "\n".join(
+            extra.append("(Relevant things you learned earlier from the internet:\n" + "\n".join(
                 f"- [K{k.id}] {k.topic}: {truncate(k.content, 1200)} (sources: {k.source})"
-                for k in knowledge))
+                for k in knowledge) + ")")
+        if self._voice:
+            extra.append(VOICE_NOTE)
+        last_user = max((i for i, m in enumerate(history) if m["role"] == "user"), default=None)
+        if extra and last_user is not None:
+            history[last_user]["content"] += "\n\n" + "\n\n".join(extra)
 
         return [{"role": "system", "content": "\n\n".join(sections)}] + history
 
@@ -339,7 +391,7 @@ class Agent:
                       else "Tools are NOT available with the current model, so you cannot act.")
         return "\n".join([
             "Current situation:",
-            f"- Date and time: {datetime.now().strftime('%A %d %B %Y, %H:%M')}",
+            f"- Today's date: {datetime.now().strftime('%A %d %B %Y')} (use get_datetime for the exact time)",
             f"- Operating system: {platform.system()} {platform.release()}",
             f"- Your workspace folder: {self.config.workspace}",
             f"- Email: {'configured for ' + self.config.email_address if self.config.email_configured else 'not configured'}",

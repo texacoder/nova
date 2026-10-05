@@ -97,6 +97,34 @@ class WebServerTests(unittest.TestCase):
         self.assertFalse(data["available"])  # the fake brain can't be installed
         self.assertEqual(self.request("POST", "/api/setup", {}, token=False)[0], 403)
 
+    def stream(self, path, body, token=True):
+        conn = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=10)
+        headers = {"Host": f"127.0.0.1:{self.server.port}", "Content-Type": "application/json"}
+        if token:
+            headers["X-Jarvis-Token"] = self.server.token
+        conn.request("POST", path, body=json.dumps(body), headers=headers)
+        response = conn.getresponse()
+        lines = response.read().decode().splitlines()
+        conn.close()
+        return response.status, [json.loads(line) for line in lines if line.strip()]
+
+    def test_streamed_message_and_approval(self):
+        status, events = self.stream("/api/message/stream", {"text": "what time is it?"})
+        self.assertEqual(status, 200)
+        self.assertEqual(events[-1]["type"], "done")
+        self.assertIn("step", [e["type"] for e in events])
+        self.assertEqual(events[-1]["reply"]["steps"][0]["tool"], "get_datetime")
+
+        _, events = self.stream("/api/message/stream", {"text": "open powershell"})
+        self.assertEqual(events[-1]["reply"]["pending"]["tool"], "open_application")
+        _, events = self.stream("/api/confirm/stream", {"approve": False})
+        self.assertIsNone(events[-1]["reply"]["pending"])
+
+    def test_stream_requires_token(self):
+        status, _ = self.stream("/api/message/stream", {"text": "/remember hacked"}, token=False)
+        self.assertEqual(status, 403)
+        self.assertEqual(self.server.agent.memory_store.count(), 0)
+
     def test_bad_requests(self):
         self.assertEqual(self.request("GET", "/api/nothing")[0], 404)
         conn = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=10)

@@ -106,10 +106,27 @@ class FakeOllama(BaseHTTPRequestHandler):
             self._send({"capabilities": caps})
         elif "tools" in request and not FakeOllama.tools_supported:
             self._send({"error": "registry.ollama.ai/library/testmodel does not support tools"}, 400)
+        elif request.get("stream"):
+            self._stream(FakeOllama.reply_with or
+                         {"role": "assistant", "content": f"echo: {request['messages'][-1]['content']}"})
         elif FakeOllama.reply_with is not None:
             self._send({"message": FakeOllama.reply_with})
         else:
             self._send({"message": {"role": "assistant", "content": f"  echo: {request['messages'][-1]['content']} "}})
+
+    def _stream(self, message):
+        """Send the reply in small pieces, the way Ollama streams."""
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.end_headers()
+        content = message.get("content", "")
+        pieces = [content[i:i + 4] for i in range(0, len(content), 4)]
+        for piece in pieces:
+            self.wfile.write(json.dumps({"message": {"role": "assistant", "content": piece}, "done": False}).encode() + b"\n")
+        final = {"role": "assistant", "content": ""}
+        if message.get("tool_calls"):
+            final["tool_calls"] = message["tool_calls"]
+        self.wfile.write(json.dumps({"message": final, "done": True}).encode() + b"\n")
 
     def log_message(self, *args):
         pass  # keep test output quiet
@@ -140,6 +157,39 @@ class LocalBrainTests(unittest.TestCase):
         self.assertFalse(request["stream"])
         self.assertEqual(request["options"]["num_ctx"], 4096)
         self.assertNotIn("tools", request)
+
+    def test_streaming_delivers_pieces_as_they_arrive(self):
+        brain = LocalBrain(self.host, "testmodel", keep_alive="1h")
+        pieces = []
+        reply = brain.chat([{"role": "user", "content": "tell me a story"}], on_token=pieces.append)
+        self.assertEqual(reply.content, "echo: tell me a story")
+        self.assertGreater(len(pieces), 3)
+        self.assertEqual("".join(pieces), "echo: tell me a story")
+        request = FakeOllama.requests[-1][1]
+        self.assertTrue(request["stream"])
+        self.assertEqual(request["keep_alive"], "1h")
+
+    def test_streamed_tool_calls(self):
+        FakeOllama.reply_with = {"role": "assistant", "content": "", "tool_calls": [
+            {"function": {"name": "web_search", "arguments": {"query": "news"}}}]}
+        pieces = []
+        reply = LocalBrain(self.host, "testmodel").chat([{"role": "user", "content": "hi"}], TOOLS, pieces.append)
+        self.assertEqual([(c.name, c.arguments) for c in reply.tool_calls], [("web_search", {"query": "news"})])
+        self.assertEqual(pieces, [])
+
+    def test_json_looking_text_is_not_streamed_to_the_user(self):
+        FakeOllama.reply_with = {"role": "assistant", "content": '{"name": "web_search", "arguments": {"query": "x"}}'}
+        pieces = []
+        reply = LocalBrain(self.host, "testmodel").chat([{"role": "user", "content": "hi"}], TOOLS, pieces.append)
+        self.assertEqual(pieces, [])  # held back...
+        self.assertEqual(reply.tool_calls[0].name, "web_search")  # ...and recognised as a tool call
+
+    def test_warm_up_generates_a_single_token(self):
+        LocalBrain(self.host, "testmodel", keep_alive="-1").warm_up([{"role": "user", "content": "Hello"}], TOOLS)
+        request = FakeOllama.requests[-1][1]
+        self.assertEqual(request["options"]["num_predict"], 1)
+        self.assertEqual(request["keep_alive"], -1)  # "-1" means keep loaded forever
+        self.assertEqual(request["tools"], TOOLS)
 
     def test_tool_calls_are_parsed(self):
         FakeOllama.reply_with = {"role": "assistant", "content": "", "tool_calls": [
