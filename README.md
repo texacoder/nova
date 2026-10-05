@@ -140,7 +140,8 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `write_file` | Create or edit text/code files | only outside the workspace |
 | `open_application` | Open apps (Geany, Notepad, Chrome...), optionally with a file | only for apps not in the trusted list or `apps.json` |
 | `open_path` | Open a file, folder, or URL with its default program | for programs/scripts, private files, and files outside your user folder |
-| `run_command` | Run a PowerShell command | **always** |
+| `delete_file` | Delete a file or folder by moving it to the **Recycle Bin** (restorable). Refuses drives, Windows/program folders, your main folders and JARVIS's own files | **always** (shows the exact path) |
+| `run_command` | Run a PowerShell command (Command Prompt-style commands like `dir /s` run in cmd). Failed commands show ✗; delete commands are redirected to `delete_file` | **always** |
 | `send_email` | Send an email | **always** |
 | `read_emails` | Read recent inbox emails (read-only) | no |
 

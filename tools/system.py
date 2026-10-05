@@ -2,6 +2,7 @@
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 from datetime import datetime
@@ -33,18 +34,52 @@ class SystemInfo(Tool):
         ])
 
 
-def shell_command(command: str) -> list[str]:
+# Commands from the old Windows Command Prompt. Models often write these (e.g. "del /f /q x"),
+# but PowerShell doesn't understand their /switches, so such commands are run in cmd instead.
+CMD_COMMANDS = {"del", "erase", "copy", "move", "dir", "rd", "rmdir", "md", "mkdir", "ren", "rename",
+                "type", "xcopy", "attrib", "tree", "where"}
+
+
+def is_cmd_style(command: str) -> bool:
+    """True for Command Prompt commands with /switches, like 'del /f /q file' or 'dir /s'."""
+    words = command.strip().split()
+    if not words or words[0].lower() not in CMD_COMMANDS:
+        return False
+    return any(re.fullmatch(r"/[a-zA-Z](:\S*)?", word) for word in words[1:])
+
+
+DELETE_COMMANDS = {"del", "erase", "rm", "rmdir", "rd", "remove-item", "ri", "rni"}
+
+
+def is_delete_command(command: str) -> bool:
+    """Commands that delete files - these go through delete_file (Recycle Bin) instead."""
+    words = command.strip().split()
+    return bool(words) and words[0].lower() in DELETE_COMMANDS
+
+
+def shell_command(command: str, windows: bool | None = None) -> list[str]:
     """How to run a command line on this operating system."""
-    if platform.system() == "Windows":
+    if windows is None:
+        windows = platform.system() == "Windows"
+    if windows:
+        if is_cmd_style(command):
+            return ["cmd", "/d", "/c", command]
         return ["powershell", "-NoProfile", "-NonInteractive", "-Command", command]
     return ["/bin/sh", "-c", command]
+
+
+def shell_name(command: str) -> str:
+    if platform.system() != "Windows":
+        return "the shell"
+    return "Command Prompt" if is_cmd_style(command) else "PowerShell"
 
 
 class RunCommand(Tool):
     name = "run_command"
     description = (
-        "Run a command line on the user's PC (PowerShell on Windows, sh on Linux/macOS) "
-        "and return its output. Use for tasks no other tool covers. The user must approve it."
+        "Run a command on the user's PC and return its output. On Windows it runs in PowerShell, "
+        "so use PowerShell syntax (e.g. Get-ChildItem, Copy-Item, New-Item). Use it only when no "
+        "other tool fits; to delete files use delete_file instead. The user must approve it."
     )
     parameters = {
         "type": "object",
@@ -61,9 +96,13 @@ class RunCommand(Tool):
 
     def describe(self, arguments: dict) -> str:
         where = arguments.get("working_directory") or str(self.config.workspace)
-        return f"Run command in {where}:\n{arguments.get('command', '')}"
+        command = str(arguments.get("command", ""))
+        return f"Run in {shell_name(command)} (folder: {where}):\n{command}"
 
     def run(self, command: str, working_directory: str = "") -> str:
+        if is_delete_command(command):
+            raise ToolError("Nothing was deleted: don't delete with run_command. Use the delete_file tool "
+                            "for each file or folder instead - it moves them to the Recycle Bin.")
         folder = os.path.expanduser(working_directory) if working_directory else str(self.config.workspace)
         os.makedirs(self.config.workspace, exist_ok=True)
         if not os.path.isdir(folder):
@@ -83,5 +122,9 @@ class RunCommand(Tool):
             raise ToolError(f"The command took longer than {self.config.command_timeout} seconds and was stopped")
         except FileNotFoundError as error:
             raise ToolError(f"Could not start the shell: {error}")
-        output = (completed.stdout or "") + (completed.stderr or "")
-        return f"Exit code {completed.returncode}\n{output.strip() or '(no output)'}"
+        output = ((completed.stdout or "") + (completed.stderr or "")).strip() or "(no output)"
+        if completed.returncode != 0:
+            # A failed command is a failure: shown with a cross, and flagged as "not done".
+            raise ToolError(f"The command failed (exit code {completed.returncode}). Nothing may have "
+                            f"been changed. Output:\n{output}")
+        return f"Exit code 0\n{output}"

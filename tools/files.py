@@ -7,10 +7,14 @@ Who may do what without asking:
     read freely - it's your PC and only you use JARVIS.
   - Private places (AppData, .ssh, password/key files, JARVIS's .env): always ask.
   - Writing anywhere outside the workspace: always ask.
+  - Deleting: always ask, and files go to the Recycle Bin so they can be restored.
 """
 
 import os
+import platform
 import re
+import shutil
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -280,3 +284,95 @@ class WriteFile(Tool):
             handle.write(content)
         verb = "Appended" if append else ("Overwrote" if existed else "Created")
         return f"{verb} {file} ({len(content)} characters)."
+
+
+# Moves one file or folder to the Windows Recycle Bin. The path comes from an
+# environment variable, so no file name can ever be read as part of the command.
+RECYCLE_SCRIPT = (
+    "Add-Type -AssemblyName Microsoft.VisualBasic; "
+    "$p = $env:JARVIS_DELETE_PATH; "
+    "if (Test-Path -LiteralPath $p -PathType Container) { "
+    "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($p, 'OnlyErrorDialogs', 'SendToRecycleBin') } "
+    "else { [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($p, 'OnlyErrorDialogs', 'SendToRecycleBin') }"
+)
+
+
+def move_to_trash(path: Path) -> None:
+    """Send a file or folder to the Recycle Bin (Windows) or the desktop trash (Linux/macOS)."""
+    if platform.system() == "Windows":
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", RECYCLE_SCRIPT],
+            env={**os.environ, "JARVIS_DELETE_PATH": str(path)},
+            capture_output=True, text=True, errors="replace", timeout=60,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode != 0:
+            raise ToolError(f"Windows could not move it to the Recycle Bin: {result.stderr.strip()[:300]}")
+        return
+    trash = Path.home() / (".Trash" if platform.system() == "Darwin" else ".local/share/Trash/files")
+    trash.mkdir(parents=True, exist_ok=True)
+    target = trash / path.name
+    counter = 1
+    while target.exists():
+        target = trash / f"{path.stem} ({counter}){path.suffix}"
+        counter += 1
+    shutil.move(str(path), str(target))
+
+
+class DeleteFile(Tool):
+    name = "delete_file"
+    description = (
+        "Delete a file or folder by moving it to the Recycle Bin (it can be restored from there). "
+        "Accepts a full path, 'Documents/old.txt', or a path in your workspace. Always use this "
+        "for deleting - never run_command."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {"path": {"type": "string", "description": "The file or folder to delete"}},
+        "required": ["path"],
+    }
+    requires_confirmation = True
+
+    def protected(self, path: Path) -> str | None:
+        """Why this path must never be deleted, or None if it's fine."""
+        resolved = path.resolve()
+        home = Path.home().resolve()
+        if resolved == Path(resolved.anchor):
+            return "a whole drive"
+        system_roots = [Path(os.environ.get(v, "")) for v in ("SystemRoot", "ProgramFiles", "ProgramFiles(x86)",
+                                                              "ProgramData")]
+        if any(str(root) not in ("", ".") and resolved.is_relative_to(root.resolve()) for root in system_roots):
+            return "a Windows or program folder"
+        if resolved == home or resolved in {known_folder(n).resolve() for n in SEARCH_EVERYWHERE}:
+            return "one of your main user folders"
+        if resolved == self.config.workspace.resolve():
+            return "the workspace folder itself"
+        jarvis_root = Path(__file__).resolve().parents[1]
+        if resolved.is_relative_to(jarvis_root) or jarvis_root.is_relative_to(resolved):
+            return "the assistant's own files"
+        if resolved.is_relative_to(self.config.data_dir.resolve()):
+            return "the assistant's memory and data"
+        return None
+
+    def describe(self, arguments: dict) -> str:
+        path = resolve_path(self.config, arguments.get("path", ""))
+        if not path.exists():
+            return f"Delete {path} (it doesn't exist, so nothing will happen)"
+        if path.is_dir():
+            count = sum(len(files) for _, _, files in os.walk(path))
+            what = f"folder with {count} file(s)"
+        else:
+            what = f"{max(1, path.stat().st_size // 1024)} KB file"
+        return f"Move to the Recycle Bin ({what}):\n{path}"
+
+    def run(self, path: str) -> str:
+        target = resolve_path(self.config, path)
+        if not target.exists():
+            raise ToolError(f"{target} doesn't exist, so nothing was deleted")
+        reason = self.protected(target)
+        if reason:
+            raise ToolError(f"Refused: {target} is {reason}. Nothing was deleted.")
+        move_to_trash(target)
+        if target.exists():
+            raise ToolError(f"{target} is still there; it could not be deleted")
+        return f"Moved {target} to the Recycle Bin. It can be restored from there."

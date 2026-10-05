@@ -9,7 +9,7 @@ when they were used recently in the conversation.
 
 CORE_TOOLS = {
     "get_datetime", "web_search", "fetch_webpage", "remember", "recall", "forget", "learn_lesson",
-    "find_files", "list_directory", "read_file", "write_file", "open_application", "open_path",
+    "find_files", "list_directory", "read_file", "write_file", "delete_file", "open_application", "open_path",
     "run_command",
 }
 
