@@ -20,7 +20,7 @@ import webbrowser
 from pathlib import Path
 
 from tools.base import Tool, ToolError
-from tools.files import inside_workspace, resolve_path
+from tools.files import free_to_read, resolve_path
 from utils.logger import get_logger
 
 log = get_logger("tools.apps")
@@ -349,7 +349,8 @@ class OpenPath(Tool):
         path = resolve_path(self.config, target)
         if path.is_dir():
             return False
-        return path.suffix.lower() in EXECUTABLE_EXTENSIONS or not inside_workspace(self.config, path)
+        # Programs/scripts always ask; your own documents, photos etc. open freely.
+        return path.suffix.lower() in EXECUTABLE_EXTENSIONS or not free_to_read(self.config, path)
 
     def describe(self, arguments: dict) -> str:
         target = str(arguments.get("target", ""))

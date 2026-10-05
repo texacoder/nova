@@ -96,7 +96,7 @@ class FileToolTests(ToolTestCase):
         self.assertIn("Error:", self.run_tool("list_directory", path="missing"))
         (self.config.workspace / "bin.dat").parent.mkdir(parents=True, exist_ok=True)
         (self.config.workspace / "bin.dat").write_bytes(b"\xff\xfe\x00\x81")
-        self.assertIn("not a text file", self.run_tool("read_file", path="bin.dat"))
+        self.assertIn("not a plain text file", self.run_tool("read_file", path="bin.dat"))
 
 
 class CommandToolTests(ToolTestCase):

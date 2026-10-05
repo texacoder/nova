@@ -128,21 +128,29 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `fetch_webpage` | Read a web page's text | no |
 | `learn_topic` | Search, read 3 pages, summarize, and save to the knowledge base | no |
 | `save_knowledge`, `remember`, `recall` | Manage long-term memory and knowledge | no |
+| `forget` | Delete a memory, lesson or knowledge entry, or all memories | **always** (shows what will be forgotten) |
 | `learn_lesson` | Save a lesson about how to work for you (after corrections or preferences) | no |
 | `create_skill` | Write a new Python tool for itself and start using it | **always** (you see the code) |
 | `remove_skill`, `list_skills` | Manage its self-written skills | remove: **always** |
 | `read_jarvis_source` | Read its own source code | no |
 | `modify_jarvis_source` | Change its own code or personality (tested and backed up) | **always** (you see a diff) |
 | `get_datetime`, `system_info` | Date/time, OS, CPU, disk space | no |
-| `list_directory`, `read_file` | Browse and read files | only outside the workspace |
+| `find_files` | Search your folders for a file by (part of its) name | no (private folders like AppData are never searched) |
+| `list_directory`, `read_file` | Browse and read files | only for private places (AppData, .ssh, key files, JARVIS's `.env`) or outside your user folder |
 | `write_file` | Create or edit text/code files | only outside the workspace |
 | `open_application` | Open apps (Geany, Notepad, Chrome...), optionally with a file | only for apps not in the trusted list or `apps.json` |
-| `open_path` | Open a file, folder, or URL with its default program | for programs/scripts and files outside the workspace |
+| `open_path` | Open a file, folder, or URL with its default program | for programs/scripts, private files, and files outside your user folder |
 | `run_command` | Run a PowerShell command | **always** |
 | `send_email` | Send an email | **always** |
 | `read_emails` | Read recent inbox emails (read-only) | no |
 
 **The workspace** is JARVIS's own folder, `~/JARVIS_Workspace` (for example `C:\Users\you\JARVIS_Workspace`). JARVIS can create and read files there freely, so code it writes for you goes there.
+
+**Your own folders** (Documents, Desktop, Downloads, Pictures, Music, Videos) can be searched, listed, read and opened without approval, since only you use JARVIS. Example: *"check my Documents folder for a file named budget"* → *"I found Budget 2025.xlsx in your Documents folder. Want me to open it?"* Writing or deleting outside the workspace always asks.
+
+**Fewer tools at a time:** for each message JARVIS offers the model its everyday tools plus only the groups your message is about (email, skills, self-editing, renaming, learning, system info). Small models choose the right tool far more reliably this way.
+
+**Honesty guard:** if an action was denied or failed, JARVIS adds *"⚠ Not done: …"* to its reply, so it can never claim something happened when it didn't.
 
 To skip approval for a tool you trust, list it in `.env`, e.g. `JARVIS_AUTO_APPROVE=open_path`. Think twice before auto-approving `run_command` or `send_email`.
 
@@ -242,6 +250,7 @@ All settings live in `.env`; see `.env.example` for descriptions. The most usefu
 | `OLLAMA_MODEL` | *(set by automatic setup)* | Model to use, e.g. `qwen2.5:7b` |
 | `OLLAMA_NUM_CTX` | `8192` | Context size. Lower it (4096) if replies are slow |
 | `OLLAMA_KEEP_ALIVE` | `30m` | How long the model stays in memory after a message (`-1` = always) |
+| `OLLAMA_TEMPERATURE` | `0.3` | 0 = focused and predictable, 1 = more creative. Low values make tool use more reliable |
 | `OLLAMA_TIMEOUT` | `300` | Seconds to wait for the model |
 | `JARVIS_WORKSPACE` | `~/JARVIS_Workspace` | JARVIS's own folder |
 | `JARVIS_AUTO_APPROVE` | *(empty)* | Tools that skip approval |

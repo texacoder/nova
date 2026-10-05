@@ -270,7 +270,8 @@ class ToolLoopTests(AgentTestCase):
 
         reply = agent.resolve_pending(False)
         self.assertFalse(outside.exists())
-        self.assertEqual(reply.text, "Okay, I didn't.")
+        self.assertTrue(reply.text.startswith("Okay, I didn't."))
+        self.assertIn("⚠ Not done: write_file (you denied it)", reply.text)
         self.assertEqual(reply.steps[0]["status"], "declined")
         self.assertIn("declined", brain.calls[-1][0][-1]["content"])
 

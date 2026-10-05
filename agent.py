@@ -28,6 +28,7 @@ from memory.database import MemoryStore, MemoryStoreError
 from tools import Tool, ToolContext, ToolError, create_registry
 from personality import load_personality
 from tools.knowledge import learn_topic
+from tools.routing import select_tool_names
 from tools.self_modify import load_changes, rollback_last_change
 from utils.logger import get_logger
 from utils.text import truncate
@@ -226,7 +227,7 @@ class Agent:
                         continue
                     text = reply.content or "I couldn't come up with an answer to that. Could you rephrase it?"
                     self.conversation.add("assistant", text)
-                    return AgentReply(text, self._steps)
+                    return AgentReply(text + self._not_done_note(), self._steps)
 
                 self._emit({"type": "reset"})  # text before tool calls isn't the final answer
                 self.conversation.add(
@@ -306,6 +307,23 @@ class Agent:
         self._steps.append(step)
         self._emit({"type": "step", **step})
 
+    def _not_done_note(self) -> str:
+        """
+        Honesty guard that doesn't rely on the model: list actions this turn that were
+        denied or failed (and not later done successfully), so a reply can never pretend.
+        """
+        succeeded_later = set()
+        problems = []
+        for step in reversed(self._steps):
+            if step["status"] == "ok":
+                succeeded_later.add(step["tool"])
+            elif step["tool"] not in succeeded_later:
+                reason = "you denied it" if step["status"] == "declined" else "it failed"
+                problems.append(f"{step['tool']} ({reason})")
+        if not problems:
+            return ""
+        return "\n\n⚠ Not done: " + ", ".join(reversed(problems))
+
     def _needs_nudge(self, text: str) -> str | None:
         """Spot common model slips that it can fix itself if asked."""
         if not text.strip():
@@ -322,7 +340,14 @@ class Agent:
                           self._steps, pending=self.pending)
 
     def _tool_schemas(self) -> list[dict] | None:
-        return self.tools.schemas() if self.brain.supports_tools else None
+        """The tools offered for this message: everyday ones plus any the message is about."""
+        if not self.brain.supports_tools:
+            return None
+        history = self.conversation.get_messages()
+        latest = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+        recent = {m.get("tool_name", "") for m in history[-12:] if m["role"] == "tool"}
+        names = select_tool_names(self.tools.names(), latest, recent, self.tools.skill_names)
+        return [self.tools.get(name).schema() for name in names]
 
     # --- context ----------------------------------------------------------
 
@@ -353,8 +378,11 @@ class Agent:
             else:
                 memories = self.memory_store.search(latest_question, limit)
             if memories:
-                sections.append("Things you remember about the user:\n" +
-                                "\n".join(f"- [{m.id}] {m.content}" for m in memories))
+                sections.append(
+                    "Facts about the user (the one person you work for). The user told you these, so "
+                    "\"I\", \"me\" and \"my\" in them mean the USER, not you. Use them to answer questions "
+                    "about the user, such as \"who am I?\" or \"what's my name?\":\n" +
+                    "\n".join(f"- [{m.id}] {m.content}" for m in memories))
 
         extra = []
         knowledge = self.memory_store.search_knowledge(latest_question, limit=3)

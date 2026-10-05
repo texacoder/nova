@@ -67,8 +67,9 @@ def learn_topic(topic: str, brain, memory_store, search=None, fetch=None):
 class Remember(Tool):
     name = "remember"
     description = (
-        "Save an important, lasting fact about the user to long-term memory "
-        "(e.g. their name, preferences, projects). Don't save trivial or temporary things."
+        "Save an important, lasting fact about the user to long-term memory (their name, "
+        "preferences, projects, people they mention). Write it about the user in the third person, "
+        "e.g. 'The user's name is Jishnu Raj.' Don't save trivial or temporary things."
     )
     parameters = {
         "type": "object",
@@ -157,3 +158,59 @@ class LearnLesson(Tool):
     def run(self, lesson: str) -> str:
         entry = self.context.memory_store.add_lesson(lesson)
         return f"Lesson #{entry.id} saved. I'll follow it from now on: {entry.content}"
+
+
+class Forget(Tool):
+    name = "forget"
+    description = (
+        "Delete things you remember when the user asks you to forget them. what='memory' with an id "
+        "deletes one fact (ids are shown as [id] next to the facts you know), what='all_memories' "
+        "deletes every fact about the user, what='lesson' or 'knowledge' with an id deletes those."
+    )
+    parameters = {
+        "type": "object",
+        "properties": {
+            "what": {"type": "string", "enum": ["memory", "all_memories", "lesson", "knowledge"],
+                     "description": "What to delete"},
+            "id": {"type": "integer", "description": "The id number (not needed for all_memories)"},
+        },
+        "required": ["what"],
+    }
+    requires_confirmation = True
+
+    def _target(self, what: str, item_id):
+        store = self.context.memory_store
+        if what == "all_memories":
+            return [f"[{m.id}] {m.content}" for m in store.list()]
+        if item_id is None:
+            raise ToolError(f"Give the id of the {what} to delete")
+        if what == "memory":
+            found = store.get(int(item_id))
+            return [f"[{found.id}] {found.content}"] if found else []
+        items = store.list_lessons() if what == "lesson" else store.list_knowledge()
+        return [f"[{i.id}] {getattr(i, 'topic', '')} {i.content}".strip()
+                for i in items if i.id == int(item_id)]
+
+    def describe(self, arguments: dict) -> str:
+        what = str(arguments.get("what", ""))
+        try:
+            items = self._target(what, arguments.get("id"))
+        except (ToolError, ValueError):
+            items = []
+        listing = "\n".join(f"- {line[:200]}" for line in items) or "(nothing matches)"
+        return f"Permanently forget ({what}):\n{listing}"
+
+    def run(self, what: str, id: int | None = None) -> str:
+        store = self.context.memory_store
+        if what not in ("memory", "all_memories", "lesson", "knowledge"):
+            raise ToolError("what must be memory, all_memories, lesson or knowledge")
+        if what == "all_memories":
+            removed = store.clear()
+            return f"Deleted all {removed} memories about the user."
+        if id is None:
+            raise ToolError(f"Give the id of the {what} to delete")
+        deleted = {"memory": store.delete, "lesson": store.delete_lesson,
+                   "knowledge": store.delete_knowledge}[what](int(id))
+        if not deleted:
+            raise ToolError(f"There is no {what} with id {id}")
+        return f"Deleted {what} #{id}."

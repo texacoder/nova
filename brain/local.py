@@ -42,7 +42,7 @@ class LocalBrain(Brain):
     supports_streaming = True
 
     def __init__(self, host: str, model: str, timeout: int = 300, num_ctx: int = 8192,
-                 keep_alive: str = "30m"):
+                 keep_alive: str = "30m", temperature: float = 0.3):
         self.host = host.rstrip("/")
         self.model = model
         self.timeout = timeout
@@ -50,6 +50,8 @@ class LocalBrain(Brain):
         # How long Ollama keeps the model in memory after a request ("30m", "2h", "-1" = forever).
         # Keeping it loaded avoids a slow reload before the next message.
         self.keep_alive = int(keep_alive) if keep_alive.lstrip("-").isdigit() else keep_alive
+        # Lower = more focused and predictable (better at following instructions and using tools).
+        self.temperature = temperature
         self.supports_tools = True
 
     @property
@@ -72,7 +74,7 @@ class LocalBrain(Brain):
             "messages": messages,
             "stream": on_token is not None,
             "keep_alive": self.keep_alive,
-            "options": {"num_ctx": self.num_ctx},
+            "options": {"num_ctx": self.num_ctx, "temperature": self.temperature},
         }
         use_tools = bool(tools) and self.supports_tools
         if use_tools:

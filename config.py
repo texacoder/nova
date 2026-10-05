@@ -32,6 +32,7 @@ DEFAULTS = {
     "OLLAMA_TIMEOUT": "300",
     "OLLAMA_NUM_CTX": "8192",
     "OLLAMA_KEEP_ALIVE": "30m",
+    "OLLAMA_TEMPERATURE": "0.3",
     # Storage, personality, logging
     "JARVIS_DATA_DIR": "data",
     "JARVIS_PERSONALITY_FILE": "personality/jarvis.txt",
@@ -73,6 +74,7 @@ class Config:
     ollama_timeout: int
     ollama_num_ctx: int
     ollama_keep_alive: str
+    ollama_temperature: float
     data_dir: Path
     personality_file: Path
     log_level: str
@@ -161,6 +163,17 @@ def _to_int(settings: dict, key: str, minimum: int) -> int:
     return number
 
 
+def _to_float(settings: dict, key: str, minimum: float, maximum: float) -> float:
+    raw = settings[key]
+    try:
+        number = float(raw)
+    except ValueError:
+        raise ConfigError(f"{key} must be a number, got {raw!r}") from None
+    if not minimum <= number <= maximum:
+        raise ConfigError(f"{key} must be between {minimum} and {maximum}, got {number}")
+    return number
+
+
 def _to_path(value: str) -> Path:
     path = Path(os.path.expandvars(value)).expanduser()
     if not path.is_absolute():
@@ -227,6 +240,7 @@ def load_config(env_file: Path | None = None, environ: dict | None = None) -> Co
         ollama_timeout=_to_int(settings, "OLLAMA_TIMEOUT", minimum=1),
         ollama_num_ctx=_to_int(settings, "OLLAMA_NUM_CTX", minimum=512),
         ollama_keep_alive=settings["OLLAMA_KEEP_ALIVE"].strip() or "30m",
+        ollama_temperature=_to_float(settings, "OLLAMA_TEMPERATURE", 0.0, 2.0),
         data_dir=_to_path(settings["JARVIS_DATA_DIR"]),
         personality_file=_to_path(settings["JARVIS_PERSONALITY_FILE"]),
         log_level=log_level,
