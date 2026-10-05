@@ -46,6 +46,25 @@ NUDGE_SKILL = ("(Automatic note from the system: you wrote skill code as text, b
 VOICE_NOTE = ("(The user is talking to you by voice and will hear your reply spoken aloud: answer in "
               "1-3 short, natural sentences. No lists, tables, links or code unless they ask for them.)")
 
+FAILED_NOTE = ("(This step FAILED. You have no results from it - do not make any up. Tell the user it "
+               "failed and why, or try a different way.)")
+
+# A reply claiming success, and words that admit failure (used by the made-up-results guard).
+CLAIMS_SUCCESS = re.compile(
+    r"\b(i found|found (these|the|it|them|your)|here (is|are)|done|deleted|removed|opened|created|saved|"
+    r"sent|moved|successfully|i've|i have|completed|it's open|is open)\b", re.IGNORECASE)
+ADMITS_FAILURE = re.compile(
+    r"\b(fail|failed|couldn't|could not|can't|cannot|unable|not able|didn't|did not|denied|error|"
+    r"not found|no (file|files|match|results)|doesn't exist|does not exist|wasn't|was not)\b", re.IGNORECASE)
+
+# Questions about the assistant's memory, answered straight from the database (no model involved).
+MEMORY_QUESTION = re.compile(
+    r"^\s*(?:(?:show|list|display|give|tell)(?: me)?\s+(?:all\s+)?(?:of\s+)?(?:your|my|the)?\s*(?:saved\s+)?"
+    r"memor(?:y|ies)|(?:what are|what's in)\s+(?:your|my)\s+(?:saved\s+)?memor(?:y|ies)|"
+    r"(?:your|my)?\s*saved\s+memor(?:y|ies)|your memor(?:y|ies)|"
+    r"what do you (?:remember|know) about me|what have you (?:remembered|saved) about me)\s*[?.!]*\s*$",
+    re.IGNORECASE)
+
 YES = {"yes", "y", "approve", "ok", "sure"}
 NO = {"no", "n", "deny", "cancel"}
 
@@ -185,6 +204,12 @@ class Agent:
             except (MemoryStoreError, ToolError) as error:
                 return AgentReply(str(error))
 
+        if MEMORY_QUESTION.match(text):
+            answer = self._describe_memories()
+            self.conversation.add("user", text)
+            self.conversation.add("assistant", answer)
+            return AgentReply(answer)
+
         self.conversation.add("user", text)
         self._queue, self._steps, self._rounds, self._nudges = [], [], 0, 0
         return self._continue()
@@ -226,6 +251,7 @@ class Agent:
                         correction.append({"role": "user", "content": nudge})
                         continue
                     text = reply.content or "I couldn't come up with an answer to that. Could you rephrase it?"
+                    text = self._replace_made_up_results(text)
                     self.conversation.add("assistant", text)
                     return AgentReply(text + self._not_done_note(), self._steps)
 
@@ -297,7 +323,9 @@ class Agent:
         self._record(call, result, "error" if result.startswith("Error:") else "ok")
 
     def _record(self, call: ToolCall, result: str, status: str) -> None:
-        self.conversation.add("tool", result, tool_name=call.name)
+        # The model gets an explicit reminder after a failure, so it doesn't invent results.
+        for_model = f"{result}\n{FAILED_NOTE}" if status == "error" else result
+        self.conversation.add("tool", for_model, tool_name=call.name)
         step = {
             "tool": call.name,
             "arguments": call.arguments,
@@ -306,6 +334,46 @@ class Agent:
         }
         self._steps.append(step)
         self._emit({"type": "step", **step})
+
+    def _describe_memories(self) -> str:
+        """A plain listing of what the assistant remembers (used for 'show your memories')."""
+        memories = self.memory_store.list()
+        lessons = self.memory_store.list_lessons()
+        topics = [k.topic for k in self.memory_store.list_knowledge()]
+        if not (memories or lessons or topics):
+            return ("I don't have any saved memories yet. Tell me something about yourself and I'll "
+                    "remember it, or use /remember <fact>.")
+        parts = []
+        if memories:
+            parts.append("Here's what I remember about you:\n" +
+                         "\n".join(f"- [{m.id}] {m.content}" for m in memories))
+        if lessons:
+            parts.append("How you like me to work:\n" + "\n".join(f"- [L{x.id}] {x.content}" for x in lessons))
+        if topics:
+            parts.append("Topics I've learned about: " + ", ".join(topics))
+        parts.append("To remove something, say \"forget memory 3\" (or /forget 3).")
+        return "\n\n".join(parts)
+
+    def _replace_made_up_results(self, text: str) -> str:
+        """
+        If every action this turn failed but the reply claims success ("I found...",
+        "Done"), the model made the results up. Replace it with the truth.
+        """
+        if not self._steps or any(step["status"] == "ok" for step in self._steps):
+            return text
+        if not CLAIMS_SUCCESS.search(text) or ADMITS_FAILURE.search(text):
+            return text
+        log.warning("Replaced a reply that claimed success after failed actions: %r", text[:200])
+        problems = []
+        for step in self._steps:
+            if step["status"] == "declined":
+                problems.append(f"{step['tool']} was not done because you denied it")
+            else:
+                reason = step["result"].removeprefix("Error:").strip().splitlines()[0][:200]
+                problems.append(f"{step['tool']} failed: {reason}")
+        return ("Sorry - that didn't work, so I have no results to show you.\n" +
+                "\n".join(f"- {p}" for p in problems) +
+                "\nTell me more (for example the exact name or folder) and I'll try again.")
 
     def _not_done_note(self) -> str:
         """

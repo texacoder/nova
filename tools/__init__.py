@@ -12,7 +12,7 @@ from tools.base import Tool, ToolContext, ToolError, ToolRegistry
 from tools.email_tools import ReadEmails, SendEmail
 from tools.files import DeleteFile, FindFiles, ListDirectory, ReadFile, WriteFile
 from tools.identity import SetMyName
-from tools.knowledge import Forget, LearnLesson, LearnTopic, Recall, Remember, SaveKnowledge
+from tools.knowledge import Forget, LearnLesson, LearnTopic, ListMemories, Recall, Remember, SaveKnowledge
 from tools.self_modify import ModifyJarvisSource, ReadJarvisSource
 from tools.skills import CreateSkill, ListSkills, RemoveSkill, load_all_skills
 from tools.system import GetDateTime, RunCommand, SystemInfo
@@ -24,7 +24,7 @@ ALL_TOOLS = [
     # internet
     WebSearch, FetchWebpage,
     # memory & learning
-    Remember, Recall, Forget, LearnTopic, SaveKnowledge, LearnLesson,
+    Remember, Recall, ListMemories, Forget, LearnTopic, SaveKnowledge, LearnLesson,
     # files
     FindFiles, ListDirectory, ReadFile, WriteFile, DeleteFile,
     # PC control

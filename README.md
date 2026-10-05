@@ -151,7 +151,9 @@ These are typed in the chat (or clicked in the Quick commands panel):
 
 **Fewer tools at a time:** for each message JARVIS offers the model its everyday tools plus only the groups your message is about (email, skills, self-editing, renaming, learning, system info). Small models choose the right tool far more reliably this way.
 
-**Honesty guard:** if an action was denied or failed, JARVIS adds *"⚠ Not done: …"* to its reply, so it can never claim something happened when it didn't.
+**Honesty guard:** if an action was denied or failed, JARVIS adds *"⚠ Not done: …"* to its reply, so it can never claim something happened when it didn't. If *every* action failed but the reply still claims success ("I found…", "Done"), the made-up reply is replaced with what actually went wrong.
+
+**Memory questions** like *"show your saved memories"* or *"what do you remember about me?"* are answered straight from JARVIS's memory, without the AI model, so the answer is always accurate.
 
 To skip approval for a tool you trust, list it in `.env`, e.g. `JARVIS_AUTO_APPROVE=open_path`. Think twice before auto-approving `run_command` or `send_email`.
 

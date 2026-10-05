@@ -214,3 +214,19 @@ class Forget(Tool):
         if not deleted:
             raise ToolError(f"There is no {what} with id {id}")
         return f"Deleted {what} #{id}."
+
+
+class ListMemories(Tool):
+    name = "list_memories"
+    description = (
+        "List everything you remember: facts about the user, lessons and learned topics. Use this "
+        "when the user asks about your memories or what you know about them. Memories are not files - "
+        "never search the PC for them."
+    )
+
+    def run(self) -> str:
+        store = self.context.memory_store
+        lines = [f"- [{m.id}] {m.content}" for m in store.list()]
+        lines += [f"- [L{x.id}] (lesson) {x.content}" for x in store.list_lessons()]
+        lines += [f"- [K{k.id}] (learned topic) {k.topic}" for k in store.list_knowledge()]
+        return "\n".join(lines) if lines else "No memories saved yet."
