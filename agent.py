@@ -22,14 +22,17 @@ from datetime import datetime
 from brain.base import Brain, BrainError, BrainUnavailableError, ToolCall
 from brain.local import LocalBrain
 from brain.setup import SetupManager
-from config import Config
+from config import PROJECT_ROOT, Config
 from memory.conversation import ConversationMemory
 from memory.database import MemoryStore, MemoryStoreError
 from tools import Tool, ToolContext, ToolError, create_registry
 from personality import load_personality
+from scheduler import Scheduler
+from tools.scheduling import format_task_list
 from tools.knowledge import learn_topic
 from tools.routing import select_tool_names
 from tools.self_modify import load_changes, rollback_last_change
+from utils import autostart
 from utils.logger import get_logger
 from utils.text import truncate
 
@@ -65,6 +68,11 @@ MEMORY_QUESTION = re.compile(
     r"what do you (?:remember|know) about me|what have you (?:remembered|saved) about me)\s*[?.!]*\s*$",
     re.IGNORECASE)
 
+# Commands whose output stays in the conversation, so "delete that skill" or
+# "cancel the second one" right after them makes sense to the model.
+FOLLOW_UP_COMMANDS = {"/memories", "/knowledge", "/lessons", "/skills", "/tools", "/scheduled"}
+FOLLOW_UP_CHARS = 1500
+
 YES = {"yes", "y", "approve", "ok", "sure"}
 NO = {"no", "n", "deny", "cancel"}
 
@@ -79,6 +87,9 @@ HELP_TEXT = """Commands:
   /lessons            List lessons {name} learned about how to work for you
   /tools              List {name}'s abilities
   /skills             List abilities {name} wrote for itself
+  /scheduled          List scheduled emails and reminders
+  /cancel <id>        Cancel a scheduled email or reminder
+  /autostart on|off   Start {name} automatically when Windows starts
   /rollback           Undo {name}'s most recent change to its own code
   /restart            Restart {name} (activates changes to its own code)
   /new                Start a fresh conversation (memories are kept)
@@ -91,6 +102,8 @@ Anything else is sent to {name}. Examples:
   write a hello world Python script and open it in Geany
   learn about solar panels
   check my latest emails
+  email bob@example.com tomorrow at 6 am saying the report is ready
+  remind me in 20 minutes to check the oven
   from now on, always answer in short bullet points   ({name} learns this lesson)
   make yourself a skill that converts CSV files to JSON ({name} writes new code for itself)"""
 
@@ -132,6 +145,8 @@ class Agent:
         self.personality = personality
         self.conversation = ConversationMemory(config.max_history)
         self.tools = create_registry(ToolContext(config, memory_store, brain))
+        # Carries out scheduled emails/reminders; main.py starts its thread.
+        self.scheduler = Scheduler(memory_store, self.tools, config.name)
         self.should_exit = False
         self.restart_requested = False
         self.pending: PendingAction | None = None
@@ -160,6 +175,9 @@ class Agent:
             "/setup": self._cmd_setup,
             "/tools": self._cmd_tools,
             "/skills": self._cmd_skills,
+            "/scheduled": self._cmd_scheduled,
+            "/cancel": self._cmd_cancel,
+            "/autostart": self._cmd_autostart,
             "/rollback": self._cmd_rollback,
             "/restart": self._cmd_restart,
             "/new": self._cmd_new,
@@ -199,10 +217,13 @@ class Agent:
             if handler is None:
                 return AgentReply(f"Unknown command: {command}. Type /help for the list of commands.")
             try:
-                return AgentReply(handler(argument.strip()), exit=self.should_exit,
-                                  restart=self.restart_requested)
-            except (MemoryStoreError, ToolError) as error:
+                answer = handler(argument.strip())
+            except (MemoryStoreError, ToolError, autostart.AutostartError) as error:
                 return AgentReply(str(error))
+            if command.lower() in FOLLOW_UP_COMMANDS:
+                self.conversation.add("user", text)
+                self.conversation.add("assistant", truncate(answer, FOLLOW_UP_CHARS))
+            return AgentReply(answer, exit=self.should_exit, restart=self.restart_requested)
 
         if MEMORY_QUESTION.match(text):
             answer = self._describe_memories()
@@ -412,7 +433,10 @@ class Agent:
         if not self.brain.supports_tools:
             return None
         history = self.conversation.get_messages()
-        latest = next((m["content"] for m in reversed(history) if m["role"] == "user"), "")
+        questions = [m["content"] for m in history if m["role"] == "user"]
+        latest = questions[-1] if questions else ""
+        if len(questions) > 1 and questions[-2].startswith("/"):
+            latest += " " + questions[-2]  # "delete that one" right after /skills is about skills
         recent = {m.get("tool_name", "") for m in history[-12:] if m["role"] == "tool"}
         names = select_tool_names(self.tools.names(), latest, recent, self.tools.skill_names)
         return [self.tools.get(name).schema() for name in names]
@@ -593,6 +617,34 @@ class Agent:
             text += "\n\nSkills that failed to load (see the log):\n" + "\n".join(f"  {e}" for e in self.tools.skill_errors)
         return text
 
+    def _cmd_scheduled(self, _argument: str) -> str:
+        text = format_task_list(self.memory_store.list_tasks())
+        if text.startswith("Nothing"):
+            return (text + " Try: \"remind me in 10 minutes to stretch\" or "
+                    "\"email bob@example.com tomorrow at 6 am saying hello\".")
+        return text + "\n\nCancel one with /cancel <number> (or just ask me)."
+
+    def _cmd_cancel(self, argument: str) -> str:
+        number = argument.strip().lstrip("#")
+        if not number.isdigit():
+            return "Usage: /cancel <number>   (see /scheduled)"
+        result = self.tools.execute("cancel_scheduled", {"id": int(number)})
+        return result.removeprefix("Error: ")
+
+    def _cmd_autostart(self, argument: str) -> str:
+        choice = argument.strip().lower()
+        if choice in ("on", "yes", "enable"):
+            path = autostart.enable(PROJECT_ROOT)
+            return (f"Done - {self.config.name} will start automatically (minimized, no browser tab) when you "
+                    f"log in to Windows, so scheduled emails and reminders work.\n"
+                    f"Startup file: {path}\nTurn it off with /autostart off.")
+        if choice in ("off", "no", "disable"):
+            if autostart.disable():
+                return f"Done - {self.config.name} will no longer start with Windows."
+            return f"{self.config.name} wasn't set to start with Windows."
+        state = "ON" if autostart.is_enabled() else "OFF"
+        return f"Start with Windows is {state}. Use /autostart on or /autostart off."
+
     def _cmd_rollback(self, _argument: str) -> str:
         return rollback_last_change(self.config)
 
@@ -620,6 +672,8 @@ class Agent:
             "Memories": f"{self.memory_store.count()} saved",
             "Knowledge": f"{self.memory_store.count_knowledge()} topics learned",
             "Lessons": f"{len(self.memory_store.list_lessons())} learned",
+            "Scheduled": f"{sum(t.status == 'pending' for t in self.memory_store.list_tasks())} waiting",
+            "Start with Windows": "on" if autostart.is_enabled() else "off",
             "Conversation": f"{len(self.conversation)} messages this session",
             "Email": self.config.email_address if self.config.email_configured else "not configured",
             "Workspace": str(self.config.workspace),

@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 
 from agent import Agent
@@ -144,8 +145,14 @@ def ask_approval(pending) -> bool:
     return answer in ("y", "yes")
 
 
+def print_notification(note: dict) -> None:
+    print(f"\n\a*** {note['title']} ({note['time']}): {note['text']} ***\nYou: ", end="", flush=True)
+
+
 def run_cli(config, agent) -> None:
     log = get_logger()
+    agent.scheduler.listeners.append(print_notification)
+    agent.scheduler.start()  # scheduled emails and reminders
     print_banner(config, agent)
     offer_setup(config, agent)
     print("\nType /help for commands, /exit to quit.\n")
@@ -181,16 +188,34 @@ def run_cli(config, agent) -> None:
 
 # --- web mode -----------------------------------------------------------------
 
+def jarvis_already_running(port: int) -> bool:
+    """Is the program on this port JARVIS itself (e.g. started with Windows)?"""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=3) as response:
+            return 'name="jarvis-token"' in response.read(20000).decode("utf-8", "replace")
+    except (OSError, ValueError):
+        return False
+
+
 def run_web(config, agent, open_browser: bool) -> None:
     from ui.server import JarvisWebServer  # imported here so --cli never needs it
 
     try:
         server = JarvisWebServer(agent, config)
     except OSError as error:
+        if jarvis_already_running(config.web_port):
+            # Already running (e.g. it started with Windows): just show it.
+            url = f"http://127.0.0.1:{config.web_port}/"
+            print(f"{config.name} is already running at {url} - opening it.")
+            if open_browser:
+                webbrowser.open(url)
+            sys.exit(0)
         print(f"Could not start the web interface on port {config.web_port}: {error}")
         print("Another program may be using that port. Set JARVIS_WEB_PORT in .env or use: python main.py --cli")
         sys.exit(1)
 
+    # Only the copy that owns the web port runs scheduled tasks (never two at once).
+    agent.scheduler.start()
     print_banner(config, agent)
     print(f"\nWeb interface: {server.url}")
     print(f"Keep this window open while you use {config.name}. Press Ctrl+C here to stop.\n")

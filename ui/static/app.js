@@ -692,6 +692,65 @@ speakBtn.addEventListener("click", () => {
   if (!speakReplies && !voice.active) speaker.stop();
 });
 
+// ---------- reminders & scheduled emails (notifications from the scheduler) ----------
+
+const notifications = {
+  // Remember what was shown, per JARVIS run (the token changes every start).
+  lastSeen() {
+    const [token, id] = loadSetting("jarvis-note-seen", "").split(":");
+    return token === TOKEN.slice(0, 12) ? Number(id) || 0 : 0;
+  },
+  markSeen(id) { saveSetting("jarvis-note-seen", `${TOKEN.slice(0, 12)}:${id}`); },
+
+  beep() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      [0, 0.25].forEach((delay) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.15, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.2);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.2);
+      });
+    } catch (e) { /* sound blocked */ }
+  },
+
+  show(note) {
+    const wrapper = addMessage("system", `**${note.title}** (${note.time}): ${note.text}`);
+    wrapper.classList.add("alert", "alert-" + note.kind);
+    wrapper.querySelector(".who").textContent = note.kind === "reminder" ? "REMINDER" : "SCHEDULED";
+    this.beep();
+    if (speaker.supported) speaker.say(note.kind === "reminder" ? `Reminder: ${note.text}` : `${note.title}.`);
+    if ("Notification" in window && Notification.permission === "granted" && document.hidden) {
+      try { new Notification(`${NAME}: ${note.title}`, { body: note.text }); } catch (e) { /* not allowed */ }
+    }
+  },
+
+  async poll() {
+    try {
+      const data = await api(`/api/notifications?after=${this.lastSeen()}`);
+      for (const note of data.notifications || []) {
+        this.show(note);
+        this.markSeen(note.id);
+      }
+    } catch (e) { /* JARVIS restarting; try again next time */ }
+  },
+
+  // Desktop pop-ups need permission, which browsers only let a click ask for.
+  askPermissionOnce() {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  },
+};
+document.addEventListener("click", () => notifications.askPermissionOnce(), { once: true });
+setInterval(() => notifications.poll(), 10000);
+
 // ---------- start ----------
 
 (async function start() {
@@ -711,5 +770,6 @@ speakBtn.addEventListener("click", () => {
   if (data.pending) {
     handleReply({ pending: data.pending, steps: [], text: "" });
   }
+  notifications.poll();
   inputEl.focus();
 })();

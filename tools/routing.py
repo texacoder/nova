@@ -7,6 +7,11 @@ short list. So everyday tools are always offered, and specialised groups
 when they were used recently in the conversation.
 """
 
+import re
+
+# "6 am", "5:30pm", "at 7" - a clock time switches on the scheduling tools.
+CLOCK_TIME = re.compile(r"\b\d{1,2}(:\d{2})?\s*(am|pm|a\.m|p\.m)\b|\bat \d{1,2}\b")
+
 CORE_TOOLS = {
     "get_datetime", "web_search", "fetch_webpage", "remember", "recall", "list_memories", "forget", "learn_lesson",
     "find_files", "list_directory", "read_file", "write_file", "delete_file", "open_application", "open_path",
@@ -19,6 +24,10 @@ TOOL_GROUPS = {
                  ["learn", "research", "study", "knowledge", "find out about"]),
     "email": ({"send_email", "read_emails"},
               ["email", "e-mail", "mail", "inbox", "gmail", "outlook"]),
+    "schedule": ({"schedule_email", "set_reminder", "list_scheduled", "cancel_scheduled"},
+                 ["remind", "reminder", "timer", "alarm", "schedule", "later", "tomorrow", "tonight",
+                  "o'clock", "minutes", "minute", "hours", "hour", "at noon",
+                  "next week", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]),
     "system": ({"system_info"},
                ["disk", "storage", "space", "ram", "cpu", "processor", "battery", "system", "specs",
                 "my pc", "my computer", "laptop"]),
@@ -37,8 +46,10 @@ def select_tool_names(all_names: list[str], user_text: str, recent_tools: set[st
     """The tools to offer for this message."""
     text = user_text.lower()
     wanted = set(CORE_TOOLS) | set(skill_names)
-    for tools, keywords in TOOL_GROUPS.values():
+    for group, (tools, keywords) in TOOL_GROUPS.items():
         if any(word in text for word in keywords) or tools & recent_tools:
+            wanted |= tools
+        elif group == "schedule" and CLOCK_TIME.search(text):
             wanted |= tools
     grouped = set().union(*(tools for tools, _ in TOOL_GROUPS.values()))
     # Any tool not in a group (e.g. added later) is always offered.

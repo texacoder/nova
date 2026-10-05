@@ -4,10 +4,13 @@ Persistent long-term memory stored in SQLite.
 SQLite is built into Python and keeps everything in one local file
 (data/jarvis.db by default). Tables are created automatically.
 
-Three tables:
+Four tables:
   memories  - facts about you ("My store is called EXORASTORE.")
   knowledge - things JARVIS learned from the internet, with their sources
   lessons   - how JARVIS should behave, learned from your corrections
+  scheduled - emails and reminders waiting for their time. A task is deleted
+              as soon as it has run; failed/missed ones are kept 7 days so
+              you can see what went wrong, then removed automatically.
 
 The MemoryStore class is the only place that touches the database, so a
 smarter search (e.g. semantic/vector search) can be added later behind the
@@ -16,10 +19,11 @@ same methods.
 
 from __future__ import annotations  # lets us name a method "list"
 
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from utils.logger import get_logger
@@ -45,7 +49,19 @@ CREATE TABLE IF NOT EXISTS lessons (
     content    TEXT    NOT NULL,
     created_at TEXT    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS scheduled (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT    NOT NULL,                    -- 'email' or 'reminder'
+    run_at     TEXT    NOT NULL,                    -- local time, ISO 8601
+    payload    TEXT    NOT NULL,                    -- JSON details
+    status     TEXT    NOT NULL DEFAULT 'pending',  -- pending / failed / missed
+    result     TEXT    NOT NULL DEFAULT '',
+    created_at TEXT    NOT NULL
+);
 """
+
+# Failed or missed tasks are kept this long (so you can see them), then purged.
+KEEP_FINISHED_DAYS = 7
 
 
 class MemoryStoreError(Exception):
@@ -66,6 +82,27 @@ class Knowledge:
     content: str
     source: str  # where it was learned, e.g. URLs
     created_at: str
+
+
+@dataclass
+class ScheduledTask:
+    id: int
+    kind: str          # "email" or "reminder"
+    run_at: datetime   # local time
+    payload: dict
+    status: str        # "pending", "failed" or "missed"
+    result: str
+    created_at: str
+
+    @classmethod
+    def from_row(cls, row) -> "ScheduledTask":
+        data = dict(row)
+        data["run_at"] = datetime.fromisoformat(data["run_at"])
+        try:
+            data["payload"] = json.loads(data["payload"])
+        except json.JSONDecodeError:
+            data["payload"] = {}
+        return cls(**data)
 
 
 def _now() -> str:
@@ -209,3 +246,45 @@ class MemoryStore:
     def delete_lesson(self, lesson_id: int) -> bool:
         self._run("DELETE FROM lessons WHERE id = ?", (lesson_id,))
         return self._last_rowcount > 0
+
+    # --- scheduled tasks (emails / reminders for later) -----------------------
+
+    def add_task(self, kind: str, run_at: datetime, payload: dict) -> ScheduledTask:
+        created_at = _now()
+        run_text = run_at.replace(microsecond=0).isoformat()
+        self._run(
+            "INSERT INTO scheduled (kind, run_at, payload, created_at) VALUES (?, ?, ?, ?)",
+            (kind, run_text, json.dumps(payload), created_at),
+        )
+        log.info("Scheduled %s #%s for %s", kind, self._last_id, run_text)
+        return ScheduledTask(self._last_id, kind, datetime.fromisoformat(run_text), payload,
+                             "pending", "", created_at)
+
+    def get_task(self, task_id: int) -> ScheduledTask | None:
+        rows = self._run("SELECT * FROM scheduled WHERE id = ?", (task_id,))
+        return ScheduledTask.from_row(rows[0]) if rows else None
+
+    def list_tasks(self) -> list[ScheduledTask]:
+        """Pending tasks first (soonest first), then failed/missed ones."""
+        rows = self._run("SELECT * FROM scheduled ORDER BY status != 'pending', run_at, id")
+        return [ScheduledTask.from_row(row) for row in rows]
+
+    def due_tasks(self, now: datetime) -> list[ScheduledTask]:
+        rows = self._run(
+            "SELECT * FROM scheduled WHERE status = 'pending' AND run_at <= ? ORDER BY run_at, id",
+            (now.replace(microsecond=0).isoformat(),),
+        )
+        return [ScheduledTask.from_row(row) for row in rows]
+
+    def mark_task(self, task_id: int, status: str, result: str = "") -> None:
+        self._run("UPDATE scheduled SET status = ?, result = ? WHERE id = ?", (status, result, task_id))
+
+    def delete_task(self, task_id: int) -> bool:
+        self._run("DELETE FROM scheduled WHERE id = ?", (task_id,))
+        return self._last_rowcount > 0
+
+    def purge_old_tasks(self, now: datetime, keep_days: int = KEEP_FINISHED_DAYS) -> int:
+        """Remove failed/missed tasks older than `keep_days`. Returns how many."""
+        cutoff = (now - timedelta(days=keep_days)).replace(microsecond=0).isoformat()
+        self._run("DELETE FROM scheduled WHERE status != 'pending' AND run_at < ?", (cutoff,))
+        return self._last_rowcount

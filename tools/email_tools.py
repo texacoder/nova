@@ -28,7 +28,8 @@ NOT_CONFIGURED = (
 
 class SendEmail(Tool):
     name = "send_email"
-    description = "Send an email from the user's email account. The user must approve it."
+    description = ("Send an email NOW from the user's email account. The user must approve it. "
+                   "To send it later at a certain time, use schedule_email instead.")
     parameters = {
         "type": "object",
         "properties": {
@@ -42,7 +43,7 @@ class SendEmail(Tool):
 
     def describe(self, arguments: dict) -> str:
         return (
-            f"Send email\nFrom: {self.config.email_address or '(not configured)'}\n"
+            f"Send email now\nFrom: {self.config.email_address or '(not configured)'}\n"
             f"To: {arguments.get('to', '')}\nSubject: {arguments.get('subject', '')}\n\n"
             f"{truncate(str(arguments.get('body', '')), 1500)}"
         )

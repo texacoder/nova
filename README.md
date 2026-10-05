@@ -82,6 +82,9 @@ Open my workspace folder
 Open youtube.com
 Check my latest 5 emails
 Send an email to friend@example.com saying I'll be late tonight
+Email bob@example.com tomorrow at 6 am saying the report is ready   ← sent automatically later
+Remind me in 20 minutes to check the oven
+Set a timer for 10 minutes
 How much free disk space do I have?
 Remember that my store is called EXORASTORE
 From now on, always add comments to code you write      ← JARVIS learns this as a lesson
@@ -113,12 +116,17 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `/lessons` | List lessons JARVIS learned about how you want it to work |
 | `/setup` | Install or repair JARVIS's brain automatically |
 | `/skills` | List abilities JARVIS wrote for itself |
+| `/scheduled` | List scheduled emails and reminders |
+| `/cancel <number>` | Cancel a scheduled email or reminder |
+| `/autostart on` / `off` | Start JARVIS automatically when you log in to Windows (minimized, no browser tab) |
 | `/rollback` | Undo JARVIS's most recent change to its own code |
 | `/restart` | Restart JARVIS (activates changes to its own code; the browser tab reconnects by itself) |
 | `/tools` | List JARVIS's abilities and which ones ask first |
 | `/new` | Start a fresh conversation (memories are kept) |
 | `/status` | Brain, memory, email, and workspace status |
 | `/exit` | Quit JARVIS |
+
+The results of `/memories`, `/knowledge`, `/lessons`, `/skills`, `/tools` and `/scheduled` become part of the conversation, so you can follow up with *"delete that skill"* or *"cancel the second one"*.
 
 ## JARVIS's abilities (tools)
 
@@ -142,14 +150,17 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `open_path` | Open a file, folder, or URL with its default program | for programs/scripts, private files, and files outside your user folder |
 | `delete_file` | Delete a file or folder by moving it to the **Recycle Bin** (restorable). Refuses drives, Windows/program folders, your main folders and JARVIS's own files | **always** (shows the exact path) |
 | `run_command` | Run a PowerShell command (Command Prompt-style commands like `dir /s` run in cmd). Failed commands show ✗; delete commands are redirected to `delete_file` | **always** |
-| `send_email` | Send an email | **always** |
+| `send_email` | Send an email now | **always** |
+| `schedule_email` | Send an email later, at a time you choose | **always** (shows the exact send time and the full email) |
+| `set_reminder` | Reminders and timers | no |
+| `list_scheduled`, `cancel_scheduled` | See or cancel scheduled emails and reminders | no |
 | `read_emails` | Read recent inbox emails (read-only) | no |
 
 **The workspace** is JARVIS's own folder, `~/JARVIS_Workspace` (for example `C:\Users\you\JARVIS_Workspace`). JARVIS can create and read files there freely, so code it writes for you goes there.
 
 **Your own folders** (Documents, Desktop, Downloads, Pictures, Music, Videos) can be searched, listed, read and opened without approval, since only you use JARVIS. Example: *"check my Documents folder for a file named budget"* → *"I found Budget 2025.xlsx in your Documents folder. Want me to open it?"* Writing or deleting outside the workspace always asks.
 
-**Fewer tools at a time:** for each message JARVIS offers the model its everyday tools plus only the groups your message is about (email, skills, self-editing, renaming, learning, system info). Small models choose the right tool far more reliably this way.
+**Fewer tools at a time:** for each message JARVIS offers the model its everyday tools plus only the groups your message is about (email, scheduling, skills, self-editing, renaming, learning, system info). Small models choose the right tool far more reliably this way.
 
 **Honesty guard:** if an action was denied or failed, JARVIS adds *"⚠ Not done: …"* to its reply, so it can never claim something happened when it didn't. If *every* action failed but the reply still claims success ("I found…", "Done"), the made-up reply is replaced with what actually went wrong.
 
@@ -182,6 +193,28 @@ Apps listed in `apps.json` count as trusted and open without asking.
 4. Restart JARVIS. `/status` should show your address.
 
 For Outlook or other providers, also set `SMTP_HOST`, `SMTP_PORT`, and `IMAP_HOST`. Your password stays in your local `.env`, which git ignores. JARVIS always shows you the full email before sending.
+
+## Scheduled emails, reminders and timers
+
+Say it the way you'd say it to a person:
+
+```
+Email bob@example.com tomorrow at 6 am saying the report is ready
+Remind me tonight at 9 to call mom
+Set a timer for 15 minutes
+Remind me on Friday at 5:30 pm about the meeting
+```
+
+- **Scheduled emails ask for your approval when you schedule them.** The approval box shows the exact send time ("Tue 6 Oct 2026, 6:00 AM (in 8 hours)") and the full email. At that time JARVIS sends it on its own.
+- **Reminders** appear in the chat in amber with a beep, are read out loud, and show as a Windows notification.
+- Times JARVIS understands: *in 10 minutes*, *in 2 hours*, *tomorrow at 6 am*, *tonight at 11*, *friday 5:30 pm*, *next monday*, *12 october*, *12/10 at 7 pm* (day/month), *at noon*. A day without a time means 9 AM.
+- `/scheduled` lists what's waiting; `/cancel 3` (or *"cancel the reminder"*) cancels one.
+
+**JARVIS must be running at that time**, and the PC must be on and awake (not sleeping or shut down). The easiest way is `/autostart on`, which starts JARVIS minimized whenever you log in to Windows. If JARVIS was off when an email was due, it sends it as soon as it starts, if it's less than 12 hours late. If it's more than 12 hours late, it doesn't send it (it may be out of date) and tells you instead.
+
+**Nothing piles up in memory:** a scheduled email or reminder is deleted from the database as soon as it has been done. Only failed or missed ones are kept, for 7 days, so you can see what went wrong, and are then removed automatically.
+
+**Already running?** If JARVIS started with Windows and you double-click `start_jarvis.bat` again, it just opens the running JARVIS in your browser.
 
 ## Voice chat
 
@@ -281,6 +314,7 @@ jarvis/
 ├── main.py              # Start here: sets everything up, runs the web UI or --cli
 ├── start_jarvis.bat       # Double-click launcher for Windows
 ├── agent.py             # The agent loop: context, tool calls, approvals, commands
+├── scheduler.py         # Runs scheduled emails and reminders at their time
 ├── config.py            # Settings from .env
 ├── brain/               # The AI model layer (swappable)
 │   ├── base.py          #   Brain interface: chat(messages, tools) + health_check()
@@ -294,13 +328,14 @@ jarvis/
 │   ├── apps.py          #   open_application, open_path
 │   ├── system.py        #   get_datetime, system_info, run_command
 │   ├── email_tools.py   #   send_email, read_emails
+│   ├── scheduling.py    #   schedule_email, set_reminder, list/cancel_scheduled
 │   ├── skills.py        #   create_skill, remove_skill, list_skills (+ skill loader)
 │   └── self_modify.py   #   read_jarvis_source, modify_jarvis_source, rollback
 ├── memory/              # SQLite memories + knowledge, conversation memory
 ├── skills/              # Abilities JARVIS wrote for itself (loaded at startup)
 ├── personality/jarvis.txt # JARVIS's personality and rules: edit freely
 ├── ui/                  # Web interface (server.py + static/ HTML, CSS, JS)
-├── utils/               # Logging and text helpers
+├── utils/               # Logging, text, time parsing (when.py), autostart helpers
 ├── tests/               # Automated tests
 └── data/                # Your database and logs (not in git)
 ```
@@ -334,7 +369,6 @@ v1.0 covers the core. Natural next steps, all still free:
 
 - Fully offline voice (Whisper for speech-to-text, Piper for text-to-speech) and a wake word
 - Smarter memory search with local embeddings (Ollama `nomic-embed-text`)
-- Reminders, scheduled tasks, and calendar (CalDAV or Google Calendar)
+- Calendar (CalDAV or Google Calendar) and repeating reminders ("every day at 8")
 - Background self-learning on topics you choose
 - Seeing your screen (screenshots with a local vision model) and mouse/keyboard control
-- Streaming replies word by word

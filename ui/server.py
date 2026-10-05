@@ -12,6 +12,8 @@ It serves the page in ui/static/ and a JSON API the page talks to:
                             (one JSON object per line; the last is {"type": "done", ...})
     GET  /api/setup      -> progress of the automatic brain setup
     POST /api/setup      -> start the automatic brain setup
+    GET  /api/notifications?after=<id>
+                         -> reminders and scheduled-email results newer than <id>
 
 Security:
   - It only listens on 127.0.0.1 (your own PC), not the network.
@@ -27,6 +29,7 @@ import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from utils.logger import get_logger
 
@@ -77,6 +80,14 @@ class JarvisWebServer:
 
     def _api(self, method: str, path: str, body: dict) -> dict:
         agent = self.agent
+        if path == "/api/notifications":  # outside the lock: the scheduler has its own
+            try:
+                after = int(body.get("after", 0))
+            except (TypeError, ValueError):
+                after = 0
+            scheduler = agent.scheduler
+            return {"notifications": scheduler.notifications_since(after),
+                    "last_id": scheduler.last_notification_id}
         if path == "/api/setup":  # outside the lock: must answer while JARVIS is busy
             if agent.setup is None:
                 return {"available": False, "state": "unavailable", "message": "Automatic setup is not available."}
@@ -170,7 +181,7 @@ class JarvisWebServer:
                 if self.headers.get("Host", "") not in server._allowed_hosts():
                     self._send_json(HTTPStatus.FORBIDDEN, {"error": "Host not allowed"})
                     return
-                path = self.path.split("?", 1)[0]
+                path, _, query = self.path.partition("?")
 
                 if method == "GET" and path in ("/", "/index.html"):
                     self._send(HTTPStatus.OK, server._render_index(), "text/html; charset=utf-8")
@@ -190,7 +201,7 @@ class JarvisWebServer:
                     self._send_json(HTTPStatus.FORBIDDEN, {"error": "Missing or wrong token"})
                     return
 
-                body = {}
+                body = {key: values[0] for key, values in parse_qs(query).items()}
                 if method == "POST":
                     length = int(self.headers.get("Content-Length") or 0)
                     if length > MAX_BODY_BYTES:
