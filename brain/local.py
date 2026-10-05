@@ -25,7 +25,7 @@ SETUP_HINT = (
     "  1. Install Ollama from https://ollama.com\n"
     "  2. Pull a model that supports tools, e.g.:  ollama pull qwen2.5:7b\n"
     "  3. Set OLLAMA_MODEL=qwen2.5:7b in your .env file\n"
-    "NOVA can do all of this for you: use the 'Set up brain' button or type /setup."
+    "The assistant can do all of this for you: use the 'Set up brain' button or type /setup."
 )
 
 
@@ -80,7 +80,7 @@ class LocalBrain(Brain):
         message = data.get("message") if isinstance(data, dict) else None
         if not isinstance(message, dict):
             log.error("Unexpected Ollama response: %r", data)
-            raise BrainError("The local model returned a response NOVA did not understand.")
+            raise BrainError("The local model returned a response the assistant did not understand.")
 
         content = (message.get("content") or "").strip()
         tool_calls = [self._parse_tool_call(c) for c in message.get("tool_calls") or []]
@@ -119,7 +119,7 @@ class LocalBrain(Brain):
             capabilities = info.get("capabilities")
             if isinstance(capabilities, list) and "tools" not in capabilities:
                 self.supports_tools = False
-                message += (" Warning: this model cannot use tools, so NOVA can chat but not act."
+                message += (" Warning: this model cannot use tools, so the assistant can chat but not act."
                             " Try qwen2.5:7b or llama3.1:8b.")
         except BrainError:
             pass  # not essential

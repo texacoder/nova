@@ -1,4 +1,4 @@
-"""Tests for self-improvement: skills NOVA writes, and changes to its own code."""
+"""Tests for self-improvement: skills JARVIS writes, and changes to its own code."""
 
 import unittest
 from pathlib import Path
@@ -23,7 +23,7 @@ class Shout(Tool):
 
 
 def make_project(root: Path) -> None:
-    """A tiny stand-in for NOVA's project: one module and one test."""
+    """A tiny stand-in for JARVIS's project: one module and one test."""
     (root / "tests").mkdir(parents=True)
     (root / "calc.py").write_text("def add(a, b):\n    return a + b\n")
     (root / "tests" / "__init__.py").write_text("")
@@ -32,7 +32,7 @@ def make_project(root: Path) -> None:
         "class T(unittest.TestCase):\n"
         "    def test_add(self):\n        self.assertEqual(calc.add(2, 2), 4)\n")
     (root / "personality").mkdir()
-    (root / "personality" / "nova.txt").write_text("You are NOVA.\n")
+    (root / "personality" / "jarvis.txt").write_text("You are JARVIS.\n")
 
 
 class SelfImprovementTestCase(unittest.TestCase):
@@ -97,7 +97,7 @@ class SkillTests(SelfImprovementTestCase):
         self.assertNotIn("send_email", registry.skill_names)
         self.assertEqual(type(registry.get("send_email")).__name__, "SendEmail")
 
-    def test_broken_skill_file_does_not_stop_nova(self):
+    def test_broken_skill_file_does_not_stop_jarvis(self):
         self.config.skills_dir.mkdir(parents=True)
         (self.config.skills_dir / "broken.py").write_text("raise RuntimeError('oops')\n")
         (self.config.skills_dir / "shout.py").write_text(GOOD_SKILL)
@@ -122,12 +122,12 @@ class SkillTests(SelfImprovementTestCase):
 
 class SelfModifyTests(SelfImprovementTestCase):
     def test_good_change_is_applied_and_can_be_rolled_back(self):
-        new_code = "def add(a, b):\n    # improved by NOVA\n    return a + b\n"
-        description = self.registry.describe("modify_nova_source", {"path": "calc.py", "content": new_code})
-        self.assertIn("+    # improved by NOVA", description)  # the approval shows a diff
-        self.assertTrue(self.registry.needs_confirmation("modify_nova_source", {"path": "calc.py", "content": ""}))
+        new_code = "def add(a, b):\n    # improved by JARVIS\n    return a + b\n"
+        description = self.registry.describe("modify_jarvis_source", {"path": "calc.py", "content": new_code})
+        self.assertIn("+    # improved by JARVIS", description)  # the approval shows a diff
+        self.assertTrue(self.registry.needs_confirmation("modify_jarvis_source", {"path": "calc.py", "content": ""}))
 
-        result = self.run_tool("modify_nova_source", path="calc.py", content=new_code, reason="comment")
+        result = self.run_tool("modify_jarvis_source", path="calc.py", content=new_code, reason="comment")
         self.assertIn("All tests passed", result)
         self.assertIn("/restart", result)
         self.assertEqual((self.project / "calc.py").read_text(), new_code)
@@ -138,45 +138,45 @@ class SelfModifyTests(SelfImprovementTestCase):
         self.assertIn("no self-made changes", rollback_last_change(self.config))
 
     def test_change_that_breaks_tests_is_rolled_back(self):
-        result = self.run_tool("modify_nova_source", path="calc.py", content="def add(a, b):\n    return a - b\n")
+        result = self.run_tool("modify_jarvis_source", path="calc.py", content="def add(a, b):\n    return a - b\n")
         self.assertIn("REJECTED", result)
         self.assertIn("AssertionError", result)
         self.assertEqual((self.project / "calc.py").read_text(), "def add(a, b):\n    return a + b\n")
         self.assertEqual(load_changes(self.config), [])
 
     def test_syntax_error_changes_nothing(self):
-        result = self.run_tool("modify_nova_source", path="calc.py", content="def add(:\n")
+        result = self.run_tool("modify_jarvis_source", path="calc.py", content="def add(:\n")
         self.assertIn("Syntax error", result)
         self.assertEqual((self.project / "calc.py").read_text(), "def add(a, b):\n    return a + b\n")
 
     def test_new_file_and_rollback_removes_it(self):
-        self.assertIn("All tests passed", self.run_tool("modify_nova_source", path="helpers/extra.py", content="X = 1\n"))
+        self.assertIn("All tests passed", self.run_tool("modify_jarvis_source", path="helpers/extra.py", content="X = 1\n"))
         self.assertTrue((self.project / "helpers" / "extra.py").exists())
         rollback_last_change(self.config)
         self.assertFalse((self.project / "helpers" / "extra.py").exists())
 
     def test_personality_change_is_active_immediately(self):
-        result = self.run_tool("modify_nova_source", path="personality/nova.txt", content="You are NOVA. Be witty.\n")
+        result = self.run_tool("modify_jarvis_source", path="personality/jarvis.txt", content="You are JARVIS. Be witty.\n")
         self.assertIn("active from the next message", result)
 
     def test_locked_and_private_files_are_refused(self):
         for path in ["tests/test_calc.py", "tools/base.py", "tools/self_modify.py", "tools/skills.py",
-                     "ui/server.py", ".env", "data/nova.db", "../outside.py", "calc.exe"]:
+                     "ui/server.py", ".env", "data/jarvis.db", "../outside.py", "calc.exe"]:
             with self.subTest(path=path):
-                result = self.run_tool("modify_nova_source", path=path, content="x = 1\n")
+                result = self.run_tool("modify_jarvis_source", path=path, content="x = 1\n")
                 self.assertTrue(result.startswith("Error:"), result)
         self.assertEqual((self.project / "tests" / "test_calc.py").read_text().count("assertEqual"), 1)
 
     def test_read_own_source(self):
-        listing = self.run_tool("read_nova_source", path=".")
+        listing = self.run_tool("read_jarvis_source", path=".")
         self.assertIn("calc.py", listing)
         self.assertIn("tests/test_calc.py  (locked)", listing)
-        self.assertIn("return a + b", self.run_tool("read_nova_source", path="calc.py"))
-        self.assertIn("Error", self.run_tool("read_nova_source", path=".env"))
+        self.assertIn("return a + b", self.run_tool("read_jarvis_source", path="calc.py"))
+        self.assertIn("Error", self.run_tool("read_jarvis_source", path=".env"))
 
 
 class SkillRobustnessTests(SelfImprovementTestCase):
-    """Local models make small slips; NOVA should absorb them."""
+    """Local models make small slips; JARVIS should absorb them."""
 
     def test_missing_import_and_markdown_fences_are_fixed(self):
         code = "```python\n" + GOOD_SKILL.replace("from tools.base import Tool, ToolError\n", "") + "```"
@@ -213,7 +213,7 @@ class SkillRobustnessTests(SelfImprovementTestCase):
             BrainReply(""),
             BrainReply("Done: HELLO!"),
         )
-        agent = Agent(self.config, brain, self.store, "You are NOVA.")
+        agent = Agent(self.config, brain, self.store, "You are JARVIS.")
         reply = agent.handle("make a shout skill and use it")
         self.assertIsNotNone(reply.pending)            # first attempt asks for approval
         reply = agent.resolve_pending(True)             # fails its check; model pastes code instead...
@@ -229,14 +229,14 @@ class SkillRobustnessTests(SelfImprovementTestCase):
     def test_nudges_are_limited(self):
         from brain.base import BrainReply
         brain = ScriptedBrain(BrainReply(""), BrainReply(""), BrainReply(""), BrainReply("never reached"))
-        reply = Agent(self.config, brain, self.store, "You are NOVA.").handle("hi")
+        reply = Agent(self.config, brain, self.store, "You are JARVIS.").handle("hi")
         self.assertIn("rephrase", reply.text)
         self.assertEqual(len(brain.calls), 3)
 
 
 class AgentCommandTests(SelfImprovementTestCase):
     def test_restart_skills_and_rollback_commands(self):
-        agent = Agent(self.config, ScriptedBrain(), self.store, "You are NOVA.")
+        agent = Agent(self.config, ScriptedBrain(), self.store, "You are JARVIS.")
         self.assertIn("No skills yet", agent.handle("/skills").text)
         self.assertIn("no self-made changes", agent.handle("/rollback").text)
         reply = agent.handle("/restart")

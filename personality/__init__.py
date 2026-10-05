@@ -1,7 +1,7 @@
 """
-Loads NOVA's personality from a plain text file (personality/nova.txt).
+Loads JARVIS's personality from a plain text file (personality/jarvis.txt).
 
-Edit that file to change how NOVA behaves; no Python changes needed.
+Edit that file to change how JARVIS behaves; no Python changes needed.
 The placeholders {name} and {version} are filled in from the config.
 """
 

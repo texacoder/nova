@@ -11,7 +11,7 @@ from tests.helpers import temp_dir
 class MemoryStoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        self.db_path = Path(self.tmp.name) / "sub" / "nova.db"
+        self.db_path = Path(self.tmp.name) / "sub" / "jarvis.db"
         self.store = MemoryStore(self.db_path)
 
     def tearDown(self):
@@ -43,7 +43,7 @@ class MemoryStoreTests(unittest.TestCase):
 
     def test_memories_survive_reopening(self):
         self.store.add("My store is called EXORASTORE.")
-        reopened = MemoryStore(self.db_path)  # simulates restarting NOVA
+        reopened = MemoryStore(self.db_path)  # simulates restarting JARVIS
         self.assertEqual(reopened.list()[0].content, "My store is called EXORASTORE.")
 
     def test_delete_memory(self):

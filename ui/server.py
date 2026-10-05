@@ -1,5 +1,5 @@
 """
-NOVA's web interface: a small local web server (standard library only).
+JARVIS's web interface: a small local web server (standard library only).
 
 It serves the page in ui/static/ and a JSON API the page talks to:
 
@@ -14,7 +14,7 @@ Security:
   - It only listens on 127.0.0.1 (your own PC), not the network.
   - Every API call needs a secret token that is created at startup and
     embedded in the page, so other websites open in your browser can't
-    send commands to NOVA.
+    send commands to JARVIS.
   - The Host header is checked to block "DNS rebinding" tricks.
 """
 
@@ -37,7 +37,7 @@ STATIC_FILES = {
 MAX_BODY_BYTES = 1_000_000
 
 
-class NovaWebServer:
+class JarvisWebServer:
     def __init__(self, agent, config):
         self.agent = agent
         self.config = config
@@ -74,7 +74,7 @@ class NovaWebServer:
 
     def _api(self, method: str, path: str, body: dict) -> dict:
         agent = self.agent
-        if path == "/api/setup":  # outside the lock: must answer while NOVA is busy
+        if path == "/api/setup":  # outside the lock: must answer while JARVIS is busy
             if agent.setup is None:
                 return {"available": False, "state": "unavailable", "message": "Automatic setup is not available."}
             if method == "POST":
@@ -150,7 +150,7 @@ class NovaWebServer:
                     self._send_json(HTTPStatus.NOT_FOUND, {"error": "Not found"})
                     return
 
-                if not secrets.compare_digest(self.headers.get("X-Nova-Token", ""), server.token):
+                if not secrets.compare_digest(self.headers.get("X-Jarvis-Token", ""), server.token):
                     self._send_json(HTTPStatus.FORBIDDEN, {"error": "Missing or wrong token"})
                     return
 

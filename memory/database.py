@@ -2,12 +2,12 @@
 Persistent long-term memory stored in SQLite.
 
 SQLite is built into Python and keeps everything in one local file
-(data/nova.db by default). Tables are created automatically.
+(data/jarvis.db by default). Tables are created automatically.
 
 Three tables:
   memories  - facts about you ("My store is called EXORASTORE.")
-  knowledge - things NOVA learned from the internet, with their sources
-  lessons   - how NOVA should behave, learned from your corrections
+  knowledge - things JARVIS learned from the internet, with their sources
+  lessons   - how JARVIS should behave, learned from your corrections
 
 The MemoryStore class is the only place that touches the database, so a
 smarter search (e.g. semantic/vector search) can be added later behind the
@@ -93,7 +93,7 @@ class MemoryStore:
             log.exception("Could not open memory database at %s", self.db_path)
             raise MemoryStoreError(
                 f"Could not open the memory database at {self.db_path}. "
-                "If the file is corrupted, move it aside and NOVA will create a new one."
+                "If the file is corrupted, move it aside and a new one will be created."
             ) from error
 
     def _connect(self) -> sqlite3.Connection:
@@ -191,7 +191,7 @@ class MemoryStore:
     def count_knowledge(self) -> int:
         return self._run("SELECT COUNT(*) AS n FROM knowledge")[0]["n"]
 
-    # --- lessons (how NOVA should behave) -----------------------------------
+    # --- lessons (how JARVIS should behave) -----------------------------------
 
     def add_lesson(self, content: str) -> Memory:
         content = content.strip()

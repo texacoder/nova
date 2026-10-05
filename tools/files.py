@@ -1,8 +1,8 @@
 """
 File tools.
 
-NOVA has its own folder, the *workspace* (NOVA_WORKSPACE, default
-~/NOVA_Workspace). Inside it NOVA can read and write freely, e.g. to
+JARVIS has its own folder, the *workspace* (JARVIS_WORKSPACE, default
+~/JARVIS_Workspace). Inside it JARVIS can read and write freely, e.g. to
 create code files. Reading or writing anywhere else needs your approval.
 """
 
@@ -41,7 +41,7 @@ class _PathTool(Tool):
 class ListDirectory(_PathTool):
     name = "list_directory"
     description = (
-        "List files and folders. Relative paths are inside NOVA's workspace folder; "
+        "List files and folders. Relative paths are inside your workspace folder; "
         "use '.' for the workspace itself or an absolute path like C:/Users/me/Documents."
     )
     parameters = {
@@ -89,7 +89,7 @@ class WriteFile(_PathTool):
     name = "write_file"
     description = (
         "Create or overwrite a text file (for example a Python script). Relative paths are "
-        "inside NOVA's workspace. Folders are created automatically. Set append=true to add "
+        "inside your workspace. Folders are created automatically. Set append=true to add "
         "to the end instead of overwriting."
     )
     parameters = {

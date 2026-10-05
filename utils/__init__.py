@@ -1,4 +1,4 @@
-"""Small helpers shared across NOVA."""
+"""Small helpers shared across JARVIS."""
 
 from utils.logger import get_logger, setup_logging
 

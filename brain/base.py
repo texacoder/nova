@@ -2,20 +2,20 @@
 The Brain interface.
 
 A "brain" is anything that can turn a conversation into a reply.
-NOVA's agent only talks to this interface, so the model behind it can be
+JARVIS's agent only talks to this interface, so the model behind it can be
 swapped (Ollama today, something else tomorrow) without touching the rest
 of the code.
 
 Messages use the common chat format understood by Ollama:
 
-    {"role": "system",    "content": "You are NOVA..."}
+    {"role": "system",    "content": "You are JARVIS..."}
     {"role": "user",      "content": "What time is it?"}
     {"role": "assistant", "content": "", "tool_calls": [
         {"function": {"name": "get_datetime", "arguments": {}}}]}
     {"role": "tool",      "content": "2026-09-25 17:03", "tool_name": "get_datetime"}
     {"role": "assistant", "content": "It's 17:03."}
 
-"Tools" are actions NOVA can take (search the web, open an app...).
+"Tools" are actions JARVIS can take (search the web, open an app...).
 The brain doesn't run tools itself: it *asks* for them by returning
 tool calls, and the agent decides whether and how to run them.
 """

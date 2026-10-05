@@ -1,4 +1,4 @@
-"""Tests for NOVA's tools (files, commands, apps, web, email, knowledge)."""
+"""Tests for JARVIS's tools (files, commands, apps, web, email, knowledge)."""
 
 import json
 import sys
@@ -101,12 +101,12 @@ class FileToolTests(ToolTestCase):
 
 class CommandToolTests(ToolTestCase):
     def test_runs_command_in_workspace(self):
-        result = self.run_tool("run_command", command="echo nova-ok")
+        result = self.run_tool("run_command", command="echo jarvis-ok")
         self.assertIn("Exit code 0", result)
-        self.assertIn("nova-ok", result)
+        self.assertIn("jarvis-ok", result)
 
     def test_timeout(self):
-        config = make_config(self.tmp.name, NOVA_COMMAND_TIMEOUT="1")
+        config = make_config(self.tmp.name, JARVIS_COMMAND_TIMEOUT="1")
         registry = create_registry(ToolContext(config, self.store, None))
         self.assertIn("longer than 1 seconds", registry.execute("run_command", {"command": "sleep 5"}))
 
@@ -232,7 +232,7 @@ class InstalledAppsTests(ToolTestCase):
 class PageServer(BaseHTTPRequestHandler):
     def do_GET(self):
         body = (b"<html><head><title>Test Page</title><style>.x{}</style></head><body>"
-                b"<nav>Menu</nav><h1>Hello</h1><p>NOVA reads <b>this</b> text.</p>"
+                b"<nav>Menu</nav><h1>Hello</h1><p>JARVIS reads <b>this</b> text.</p>"
                 b"<script>alert(1)</script></body></html>")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -271,7 +271,7 @@ class WebToolTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
         self.assertEqual(title, "Test Page")
-        self.assertIn("NOVA reads this text.", text)
+        self.assertIn("JARVIS reads this text.", text)
         self.assertNotIn("alert", text)
         self.assertNotIn("Menu", text)
 

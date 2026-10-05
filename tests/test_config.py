@@ -17,19 +17,19 @@ class ConfigTests(unittest.TestCase):
 
     def test_defaults(self):
         config = load_config(env_file=self.env_file, environ={})
-        self.assertEqual(config.name, "NOVA")
+        self.assertEqual(config.name, "JARVIS")
         self.assertEqual(config.version, "1.0")
         self.assertEqual(config.brain, "ollama")
         self.assertEqual(config.ollama_host, "http://localhost:11434")
         self.assertEqual(config.ollama_model, "")
         self.assertEqual(config.data_dir, PROJECT_ROOT / "data")
-        self.assertEqual(config.workspace, Path.home() / "NOVA_Workspace")
+        self.assertEqual(config.workspace, Path.home() / "JARVIS_Workspace")
         self.assertEqual(config.web_host, "127.0.0.1")
         self.assertFalse(config.email_configured)
         self.assertEqual(config.auto_approve, frozenset())
 
     def test_auto_approve_list(self):
-        config = load_config(env_file=self.env_file, environ={"NOVA_AUTO_APPROVE": "write_file, run_command,"})
+        config = load_config(env_file=self.env_file, environ={"JARVIS_AUTO_APPROVE": "write_file, run_command,"})
         self.assertEqual(config.auto_approve, frozenset({"write_file", "run_command"}))
 
     def test_notepad_bom_is_tolerated(self):
@@ -38,10 +38,10 @@ class ConfigTests(unittest.TestCase):
 
     def test_env_file_is_read(self):
         self.env_file.write_text(
-            "# comment\n\nNOVA_NAME=Nova Prime\nOLLAMA_MODEL=\"llama3.2\"\nexport NOVA_MAX_HISTORY=8\n"
+            "# comment\n\nJARVIS_NAME=Jarvis Prime\nOLLAMA_MODEL=\"llama3.2\"\nexport JARVIS_MAX_HISTORY=8\n"
         )
         config = load_config(env_file=self.env_file, environ={})
-        self.assertEqual(config.name, "Nova Prime")
+        self.assertEqual(config.name, "Jarvis Prime")
         self.assertEqual(config.ollama_model, "llama3.2")
         self.assertEqual(config.max_history, 8)
 
@@ -51,20 +51,20 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.ollama_model, "from-env")
 
     def test_relative_paths_use_project_root(self):
-        config = load_config(env_file=self.env_file, environ={"NOVA_DATA_DIR": "somewhere"})
+        config = load_config(env_file=self.env_file, environ={"JARVIS_DATA_DIR": "somewhere"})
         self.assertEqual(config.data_dir, PROJECT_ROOT / "somewhere")
-        self.assertEqual(config.db_path, PROJECT_ROOT / "somewhere" / "nova.db")
+        self.assertEqual(config.db_path, PROJECT_ROOT / "somewhere" / "jarvis.db")
 
     def test_invalid_values_raise_config_error(self):
         bad_values = [
-            {"NOVA_BRAIN": "chatgpt"},
-            {"NOVA_MAX_HISTORY": "lots"},
-            {"NOVA_MAX_HISTORY": "0"},
-            {"NOVA_LOG_LEVEL": "LOUD"},
+            {"JARVIS_BRAIN": "chatgpt"},
+            {"JARVIS_MAX_HISTORY": "lots"},
+            {"JARVIS_MAX_HISTORY": "0"},
+            {"JARVIS_LOG_LEVEL": "LOUD"},
             {"OLLAMA_HOST": "localhost:11434"},
-            {"NOVA_NAME": "  "},
-            {"NOVA_WEB_PORT": "http"},
-            {"NOVA_MAX_TOOL_STEPS": "0"},
+            {"JARVIS_NAME": "  "},
+            {"JARVIS_WEB_PORT": "http"},
+            {"JARVIS_MAX_TOOL_STEPS": "0"},
         ]
         for environ in bad_values:
             with self.subTest(environ=environ):

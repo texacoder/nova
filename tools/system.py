@@ -52,7 +52,7 @@ class RunCommand(Tool):
             "command": {"type": "string", "description": "The command to run"},
             "working_directory": {
                 "type": "string",
-                "description": "Folder to run in (default: NOVA's workspace)",
+                "description": "Folder to run in (default: your workspace)",
             },
         },
         "required": ["command"],

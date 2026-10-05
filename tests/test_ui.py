@@ -10,16 +10,16 @@ from agent import Agent
 from tests.mock_brain import MockBrain
 from memory import MemoryStore
 from tests.helpers import make_config, temp_dir
-from ui.server import NovaWebServer
+from ui.server import JarvisWebServer
 
 
 class WebServerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = temp_dir()
-        config = make_config(self.tmp.name, NOVA_WEB_PORT="1")
+        config = make_config(self.tmp.name, JARVIS_WEB_PORT="1")
         config.web_port = 0  # let the OS pick a free port
-        agent = Agent(config, MockBrain(), MemoryStore(config.db_path), "You are NOVA.")
-        self.server = NovaWebServer(agent, config)
+        agent = Agent(config, MockBrain(), MemoryStore(config.db_path), "You are JARVIS.")
+        self.server = JarvisWebServer(agent, config)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def tearDown(self):
@@ -30,7 +30,7 @@ class WebServerTests(unittest.TestCase):
         conn = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=10)
         headers = {"Host": host or f"127.0.0.1:{self.server.port}"}
         if token:
-            headers["X-Nova-Token"] = self.server.token
+            headers["X-Jarvis-Token"] = self.server.token
         data = None
         if body is not None:
             data = json.dumps(body)
@@ -48,7 +48,7 @@ class WebServerTests(unittest.TestCase):
         html = response.read().decode()
         self.assertEqual(response.status, 200)
         self.assertIn(self.server.token, html)
-        self.assertIn("NOVA", html)
+        self.assertIn("JARVIS", html)
         self.assertIn("default-src 'self'", response.getheader("Content-Security-Policy"))
         self.assertIsNone(re.search(r"\{\{\w+\}\}", html))  # all placeholders filled
 
@@ -101,7 +101,7 @@ class WebServerTests(unittest.TestCase):
         self.assertEqual(self.request("GET", "/api/nothing")[0], 404)
         conn = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=10)
         conn.request("POST", "/api/message", body="{not json", headers={
-            "X-Nova-Token": self.server.token, "Host": f"127.0.0.1:{self.server.port}"})
+            "X-Jarvis-Token": self.server.token, "Host": f"127.0.0.1:{self.server.port}"})
         self.assertEqual(conn.getresponse().status, 400)
         conn.close()
 

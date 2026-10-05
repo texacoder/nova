@@ -1,9 +1,9 @@
 """
 Memory and learning tools.
 
-"Learning" in NOVA means: research a topic on the internet, summarise what
+"Learning" in JARVIS means: research a topic on the internet, summarise what
 the sources say, and save that summary (with its sources) in the knowledge
-base. Later, when you ask about something related, NOVA finds the saved
+base. Later, when you ask about something related, JARVIS finds the saved
 knowledge and uses it. (The AI model itself is not retrained; that would
 need powerful hardware. This approach is free and works on a normal PC.)
 """
@@ -105,7 +105,7 @@ class LearnTopic(Tool):
     name = "learn_topic"
     description = (
         "Research a topic on the internet (search + read several pages), then save a summary "
-        "to NOVA's knowledge base so it is remembered permanently. Use when the user asks you "
+        "to your knowledge base so it is remembered permanently. Use when the user asks you "
         "to learn or study something."
     )
     parameters = {

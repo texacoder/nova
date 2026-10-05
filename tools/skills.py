@@ -1,17 +1,17 @@
 """
-Skills: new abilities NOVA writes for itself.
+Skills: new abilities JARVIS writes for itself.
 
-When NOVA needs an ability it doesn't have (e.g. "convert this CSV to
+When JARVIS needs an ability it doesn't have (e.g. "convert this CSV to
 Excel" or "resize these photos"), it can write a new Tool in Python with
 create_skill. The code is:
 
   1. shown to you for approval (it is real code that will run on your PC),
   2. checked in a separate Python process (syntax, structure, can be loaded),
   3. saved to the skills/ folder, and
-  4. loaded immediately, so NOVA can use it in the same conversation.
+  4. loaded immediately, so JARVIS can use it in the same conversation.
 
-Skills are loaded again every time NOVA starts. Skills can't replace
-NOVA's built-in tools. Delete a file in skills/ (or ask NOVA to use
+Skills are loaded again every time JARVIS starts. Skills can't replace
+JARVIS's built-in tools. Delete a file in skills/ (or ask JARVIS to use
 remove_skill) to remove an ability.
 """
 
@@ -27,7 +27,7 @@ from utils.logger import get_logger
 
 log = get_logger("tools.skills")
 
-# NOVA's own code folder: skills always import NOVA's real tools.base from here.
+# JARVIS's own code folder: skills always import JARVIS's real tools.base from here.
 CODE_ROOT = Path(__file__).resolve().parents[1]
 SKILL_NAME = re.compile(r"^[a-z][a-z0-9_]{2,40}$")
 
@@ -48,7 +48,7 @@ class WordCount(Tool):
         return f"{len(text.split())} words"
 '''
 
-# Runs in a separate process to check a skill file without affecting NOVA.
+# Runs in a separate process to check a skill file without affecting JARVIS.
 VALIDATOR = r"""
 import importlib.util, json, sys
 sys.path.insert(0, sys.argv[3])
@@ -95,7 +95,7 @@ def prepare_skill_code(code: str) -> str:
 
 def _module_tools(path: Path) -> list[type]:
     """Import a skill file and return the Tool classes it defines."""
-    module_name = f"nova_skill_{path.stem}"
+    module_name = f"jarvis_skill_{path.stem}"
     spec = importlib.util.spec_from_file_location(module_name, path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -130,7 +130,7 @@ def load_all_skills(context, registry) -> list[str]:
         try:
             names = load_skill(path, context, registry)
             log.info("Loaded skill %s: %s", path.name, names)
-        except Exception as error:  # a broken skill must not stop NOVA
+        except Exception as error:  # a broken skill must not stop JARVIS
             log.exception("Could not load skill %s", path.name)
             errors.append(f"{path.name}: {error}")
     return errors

@@ -28,7 +28,7 @@ class BrainInterfaceTests(unittest.TestCase):
 
     def test_factory(self):
         with temp_dir() as tmp:
-            brain = create_brain(make_config(tmp, NOVA_BRAIN="ollama", OLLAMA_MODEL="m", OLLAMA_NUM_CTX="4096"))
+            brain = create_brain(make_config(tmp, JARVIS_BRAIN="ollama", OLLAMA_MODEL="m", OLLAMA_NUM_CTX="4096"))
             self.assertIsInstance(brain, LocalBrain)
             self.assertEqual(brain.num_ctx, 4096)
 
@@ -37,14 +37,14 @@ class MockBrainTests(unittest.TestCase):
     def setUp(self):
         self.brain = MockBrain()
 
-    def ask(self, text, tools=TOOLS, system="You are NOVA."):
+    def ask(self, text, tools=TOOLS, system="You are JARVIS."):
         return self.brain.chat([{"role": "system", "content": system}, {"role": "user", "content": text}], tools)
 
     def test_health_check(self):
         self.assertTrue(self.brain.health_check().ok)
 
     def test_greeting(self):
-        self.assertIn("NOVA", self.ask("hello").content)
+        self.assertIn("JARVIS", self.ask("hello").content)
 
     def test_requests_tools(self):
         cases = {
@@ -71,7 +71,7 @@ class MockBrainTests(unittest.TestCase):
         self.assertIn("Friday 10:00", reply.content)
 
     def test_uses_memory_from_system_prompt(self):
-        reply = self.ask("What is my store called?", system="You are NOVA.\n- [1] My store is called EXORASTORE.")
+        reply = self.ask("What is my store called?", system="You are JARVIS.\n- [1] My store is called EXORASTORE.")
         self.assertIn("EXORASTORE", reply.content)
 
     def test_rejects_invalid_messages(self):

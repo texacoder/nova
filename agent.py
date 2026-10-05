@@ -1,5 +1,5 @@
 """
-The Agent Engine: NOVA's decision loop, independent of any interface.
+The Agent Engine: JARVIS's decision loop, independent of any interface.
 
 For each message you send, the agent:
   1. Runs slash commands (/remember, /learn, ...) directly, or
@@ -34,11 +34,11 @@ from utils.text import truncate
 
 log = get_logger("agent")
 
-MAX_NUDGES = 2  # times per message NOVA may ask the model to correct itself
+MAX_NUDGES = 2  # times per message JARVIS may ask the model to correct itself
 
-NUDGE_EMPTY = ("(Automatic note from NOVA's system: your last reply was empty. Answer the user now, "
+NUDGE_EMPTY = ("(Automatic note from the system: your last reply was empty. Answer the user now, "
                "or call a tool if an action is needed.)")
-NUDGE_SKILL = ("(Automatic note from NOVA's system: you wrote skill code as text, but nothing was "
+NUDGE_SKILL = ("(Automatic note from the system: you wrote skill code as text, but nothing was "
                "installed. Call the create_skill tool now with the complete, corrected code. Don't "
                "show code to the user instead of calling the tool.)")
 
@@ -51,25 +51,25 @@ HELP_TEXT = """Commands:
   /memories           List saved memories
   /forget <id>        Delete a memory (K<id> = knowledge, L<id> = lesson)
   /clear_memory       Delete ALL memories (asks for confirmation)
-  /learn <topic>      Research a topic online and save what NOVA learns
-  /knowledge          List what NOVA has learned
-  /lessons            List lessons NOVA learned about how to work for you
-  /tools              List NOVA's abilities
-  /skills             List abilities NOVA wrote for itself
-  /rollback           Undo NOVA's most recent change to its own code
-  /restart            Restart NOVA (activates changes to its own code)
+  /learn <topic>      Research a topic online and save what {name} learns
+  /knowledge          List what {name} has learned
+  /lessons            List lessons {name} learned about how to work for you
+  /tools              List {name}'s abilities
+  /skills             List abilities {name} wrote for itself
+  /rollback           Undo {name}'s most recent change to its own code
+  /restart            Restart {name} (activates changes to its own code)
   /new                Start a fresh conversation (memories are kept)
-  /status             Show NOVA's current status
-  /setup              Install/repair NOVA's brain automatically
-  /exit               Quit NOVA
+  /status             Show {name}'s current status
+  /setup              Install/repair {name}'s brain automatically
+  /exit               Quit {name}
 
-Anything else is sent to NOVA. Examples:
+Anything else is sent to {name}. Examples:
   search the latest Python release
   write a hello world Python script and open it in Geany
   learn about solar panels
   check my latest emails
-  from now on, always answer in short bullet points   (NOVA learns this lesson)
-  make yourself a skill that converts CSV files to JSON (NOVA writes new code for itself)"""
+  from now on, always answer in short bullet points   ({name} learns this lesson)
+  make yourself a skill that converts CSV files to JSON ({name} writes new code for itself)"""
 
 
 @dataclass
@@ -121,6 +121,7 @@ class Agent:
         self.setup = SetupManager(brain, config.env_file) if isinstance(brain, LocalBrain) else None
         # Remember the personality file's timestamp so edits are picked up live.
         self._personality_mtime = self._mtime(config.personality_file)
+        self._personality_name = config.name
 
         self.commands = {
             "/help": self._cmd_help,
@@ -174,7 +175,7 @@ class Agent:
         return self._continue()
 
     def resolve_pending(self, approved: bool) -> AgentReply:
-        """Approve or decline the action NOVA is waiting on, then carry on."""
+        """Approve or decline the action JARVIS is waiting on, then carry on."""
         if not self.pending:
             return AgentReply("There is nothing waiting for approval.")
         call = self._queue.pop(0)
@@ -326,8 +327,10 @@ class Agent:
 
     def _reload_personality_if_changed(self) -> None:
         mtime = self._mtime(self.config.personality_file)
-        if mtime and mtime != self._personality_mtime:
+        renamed = self.config.name != self._personality_name
+        if (mtime and mtime != self._personality_mtime) or renamed:
             self._personality_mtime = mtime
+            self._personality_name = self.config.name
             self.personality = load_personality(self.config.personality_file, self.config.name, self.config.version)
             log.info("Personality file changed; reloaded")
 
@@ -346,7 +349,7 @@ class Agent:
     # --- commands ---------------------------------------------------------
 
     def _cmd_help(self, _argument: str) -> str:
-        return HELP_TEXT
+        return HELP_TEXT.replace("{name}", self.config.name)
 
     def _cmd_remember(self, argument: str) -> str:
         if not argument:
@@ -434,7 +437,7 @@ class Agent:
             if name in self.tools.skill_names:
                 gate += " (skill)"
             lines.append(f"  {name:<17} {gate:<14} {truncate(tool.description, 70).splitlines()[0]}")
-        return "NOVA's abilities:\n" + "\n".join(lines)
+        return f"{self.config.name}'s abilities:\n" + "\n".join(lines)
 
     def _cmd_skills(self, _argument: str) -> str:
         text = self.tools.execute("list_skills", {})
@@ -448,7 +451,7 @@ class Agent:
     def _cmd_restart(self, _argument: str) -> str:
         self.should_exit = True
         self.restart_requested = True
-        return "Restarting NOVA..."
+        return f"Restarting {self.config.name}..."
 
     def _cmd_new(self, _argument: str) -> str:
         self.conversation.clear()

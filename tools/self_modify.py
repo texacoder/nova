@@ -1,19 +1,19 @@
 """
-Self-modification: NOVA can read and change its own source code.
+Self-modification: JARVIS can read and change its own source code.
 
 Safety net for every change:
   1. You approve it after seeing exactly what changes (a diff).
   2. The old version is backed up to data/backups/.
-  3. NOVA's full test suite runs. If ANY test fails, the change is rolled
-     back automatically and NOVA is told why, so it can try again.
+  3. JARVIS's full test suite runs. If ANY test fails, the change is rolled
+     back automatically and JARVIS is told why, so it can try again.
   4. /rollback undoes the most recent successful change.
 
-Some files are locked so NOVA can't weaken its own safeguards: the tests,
+Some files are locked so JARVIS can't weaken its own safeguards: the tests,
 the approval system, this file, the skill installer and the web security.
 You can still edit those yourself.
 
 Code changes take effect after /restart. Personality changes
-(personality/nova.txt) take effect on the next message.
+(personality/jarvis.txt) take effect on the next message.
 """
 
 import difflib
@@ -33,7 +33,7 @@ log = get_logger("tools.self_modify")
 EDITABLE_SUFFIXES = {".py", ".txt", ".md", ".json", ".js", ".css", ".html", ".bat"}
 HIDDEN_PARTS = {"data", ".git", "__pycache__", ".venv", "venv", ".pytest_cache"}
 PRIVATE_NAMES = {".env", "apps.json"}
-# Safeguards NOVA may read but never change by itself.
+# Safeguards JARVIS may read but never change by itself.
 LOCKED = {"tests", "tools/base.py", "tools/self_modify.py", "tools/skills.py", "ui/server.py"}
 TEST_TIMEOUT = 600
 
@@ -41,7 +41,7 @@ TEST_TIMEOUT = 600
 def _relative(root: Path, path: str) -> tuple[Path, str]:
     candidate = (root / path.strip().lstrip("/\\")).resolve()
     if not candidate.is_relative_to(root.resolve()):
-        raise ToolError("Only files inside NOVA's own project folder can be used")
+        raise ToolError("Only files inside the assistant's own project folder can be used")
     relative = candidate.relative_to(root.resolve())
     if HIDDEN_PARTS & set(relative.parts) or candidate.name in PRIVATE_NAMES:
         raise ToolError(f"{relative.as_posix()} is private data or configuration")
@@ -53,7 +53,7 @@ def is_locked(relative: str) -> bool:
 
 
 def editable_path(root: Path, path: str) -> tuple[Path, str]:
-    """Resolve a project-relative path and make sure NOVA may change it."""
+    """Resolve a project-relative path and make sure JARVIS may change it."""
     file, relative = _relative(root, path)
     if is_locked(relative):
         raise ToolError(f"{relative} is a locked safeguard; only the user can edit it by hand")
@@ -74,7 +74,7 @@ def list_source_files(root: Path) -> list[str]:
 
 
 def run_test_suite(root: Path) -> tuple[bool, str]:
-    """Run NOVA's tests in a separate process. Returns (passed, output)."""
+    """Run JARVIS's tests in a separate process. Returns (passed, output)."""
     try:
         result = subprocess.run(
             [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", "."],
@@ -104,7 +104,7 @@ def _save_changes(config, changes: list[dict]) -> None:
 
 
 def rollback_last_change(config) -> str:
-    """Undo the most recent change NOVA made to its own files."""
+    """Undo the most recent change JARVIS made to its own files."""
     changes = load_changes(config)
     if not changes:
         return "There are no self-made changes to undo."
@@ -121,10 +121,10 @@ def rollback_last_change(config) -> str:
 
 # --- tools -------------------------------------------------------------------------
 
-class ReadNovaSource(Tool):
-    name = "read_nova_source"
+class ReadJarvisSource(Tool):
+    name = "read_jarvis_source"
     description = (
-        "Read your own source code (NOVA's project files) to understand or improve yourself. "
+        "Read your own source code (your project files) to understand or improve yourself. "
         "Use path '.' to list all files."
     )
     parameters = {
@@ -136,27 +136,27 @@ class ReadNovaSource(Tool):
     def run(self, path: str) -> str:
         root = self.config.project_root
         if path.strip() in ("", ".", "/"):
-            return "NOVA's source files:\n" + "\n".join(list_source_files(root))
+            return "Your source files:\n" + "\n".join(list_source_files(root))
         file, relative = _relative(root, path)
         if not file.is_file():
             raise ToolError(f"{relative} does not exist")
         return f"--- {relative} ---\n{file.read_text(encoding='utf-8')}"
 
 
-class ModifyNovaSource(Tool):
-    name = "modify_nova_source"
+class ModifyJarvisSource(Tool):
+    name = "modify_jarvis_source"
     description = (
         "Change your own source code or personality to improve yourself (fix a bug, add a feature, change "
-        "behaviour). First read the file with read_nova_source, then provide its COMPLETE new content. "
-        "The change is backed up and NOVA's tests run automatically; if any test fails it is rolled back. "
+        "behaviour). First read the file with read_jarvis_source, then provide its COMPLETE new content. "
+        "The change is backed up and your tests run automatically; if any test fails it is rolled back. "
         "For a new ability prefer create_skill. Tests and safety files are locked."
     )
     parameters = {
         "type": "object",
         "properties": {
-            "path": {"type": "string", "description": "Project-relative path, e.g. personality/nova.txt"},
+            "path": {"type": "string", "description": "Project-relative path, e.g. personality/jarvis.txt"},
             "content": {"type": "string", "description": "The complete new file content"},
-            "reason": {"type": "string", "description": "Why this change improves NOVA"},
+            "reason": {"type": "string", "description": "Why this change improves you"},
         },
         "required": ["path", "content"],
     }
@@ -168,11 +168,11 @@ class ModifyNovaSource(Tool):
             file, relative = editable_path(self.config.project_root, path)
             old = file.read_text(encoding="utf-8").splitlines(keepends=True) if file.exists() else []
         except (ToolError, OSError, UnicodeDecodeError) as error:
-            return f"Modify NOVA's file {path} (this will be refused: {error})"
+            return f"Modify the assistant's file {path} (this will be refused: {error})"
         new = str(arguments.get("content", "")).splitlines(keepends=True)
         diff = "".join(difflib.unified_diff(old, new, f"{relative} (now)", f"{relative} (new)"))
         reason = arguments.get("reason") or "(no reason given)"
-        return f"Modify NOVA's own file: {relative}\nReason: {reason}\n\n{truncate(diff or '(no changes)', 12000)}"
+        return f"Modify the assistant's own file: {relative}\nReason: {reason}\n\n{truncate(diff or '(no changes)', 12000)}"
 
     def run(self, path: str, content: str, reason: str = "") -> str:
         root = self.config.project_root
@@ -205,7 +205,7 @@ class ModifyNovaSource(Tool):
             else:
                 file.unlink(missing_ok=True)
             log.warning("Change to %s rolled back: tests failed", relative)
-            return ("Change REJECTED and rolled back: NOVA's tests failed with it. Nothing changed. "
+            return ("Change REJECTED and rolled back: the tests failed with it. Nothing changed. "
                     "Test output (end):\n" + "\n".join(output.splitlines()[-25:]))
 
         changes = load_changes(self.config)

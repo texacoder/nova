@@ -1,7 +1,7 @@
 """
-NOVA's brain package.
+JARVIS's brain package.
 
-`create_brain(config)` creates NOVA's brain: a real AI model running on
+`create_brain(config)` creates JARVIS's brain: a real AI model running on
 this PC through Ollama. To support another model server later, write a
 class that inherits from Brain and add it here.
 """

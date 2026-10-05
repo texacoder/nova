@@ -10,9 +10,9 @@ from config import load_config
 def make_config(tmp_dir: str, **overrides):
     """A Config that stores everything (data + workspace) inside a temporary folder."""
     environ = {
-        "NOVA_DATA_DIR": str(Path(tmp_dir) / "data"),
-        "NOVA_WORKSPACE": str(Path(tmp_dir) / "workspace"),
-        "NOVA_APPS_FILE": str(Path(tmp_dir) / "apps.json"),
+        "JARVIS_DATA_DIR": str(Path(tmp_dir) / "data"),
+        "JARVIS_WORKSPACE": str(Path(tmp_dir) / "workspace"),
+        "JARVIS_APPS_FILE": str(Path(tmp_dir) / "apps.json"),
     }
     environ.update(overrides)
     return load_config(env_file=Path(tmp_dir) / "missing.env", environ=environ)

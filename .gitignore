@@ -2,7 +2,7 @@
 .env
 apps.json
 
-# NOVA's local data: memory database and logs
+# JARVIS's local data: memory database and logs
 data/*
 !data/.gitkeep
 

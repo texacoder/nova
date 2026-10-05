@@ -1,8 +1,8 @@
 """
 Short-term conversation memory.
 
-Keeps the messages of the current session in RAM so NOVA can follow the
-conversation. It is NOT saved to disk: it disappears when NOVA exits.
+Keeps the messages of the current session in RAM so JARVIS can follow the
+conversation. It is NOT saved to disk: it disappears when JARVIS exits.
 Only the most recent `max_messages` are kept so prompts stay small.
 """
 

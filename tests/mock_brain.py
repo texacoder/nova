@@ -1,7 +1,7 @@
 """
 MockBrain: a tiny rule-based stand-in for a real model, used ONLY by the tests.
 
-NOVA itself always uses a real local model. This fake brain lets the test
+JARVIS itself always uses a real local model. This fake brain lets the test
 suite exercise the agent, tools and UI without a model. It understands a few
 fixed phrases:
 
@@ -69,7 +69,7 @@ class MockBrain(Brain):
                 return BrainReply("", [ToolCall(tool_name, make_args(match))])
 
         if set(re.findall(r"[a-z]+", question.lower())) & GREETINGS:
-            return BrainReply("[mock] Hello. I'm NOVA. How can I help?")
+            return BrainReply("[mock] Hello. I'm JARVIS. How can I help?")
 
         # Facts to search: saved memories/knowledge, then earlier things you said.
         system_text = "\n".join(m["content"] for m in messages if m["role"] == "system")

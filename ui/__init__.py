@@ -1,1 +1,1 @@
-"""NOVA web interface."""
+"""JARVIS web interface."""

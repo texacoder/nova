@@ -1,5 +1,5 @@
 """
-Configuration for NOVA.
+Configuration for JARVIS.
 
 Settings are read from (highest priority first):
   1. Real environment variables  (e.g. `set OLLAMA_MODEL=qwen2.5:7b`)
@@ -7,7 +7,7 @@ Settings are read from (highest priority first):
   3. The defaults defined below
 
 Nothing here is machine-specific: relative paths are resolved against the
-project folder and "~" means your home folder, so NOVA works on any PC.
+project folder and "~" means your home folder, so JARVIS works on any PC.
 """
 
 import os
@@ -17,36 +17,36 @@ from pathlib import Path
 # The folder that contains this file (the project root).
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-# Brains NOVA knows how to create. See brain/__init__.py.
+# Brains JARVIS knows how to create. See brain/__init__.py.
 SUPPORTED_BRAINS = ("ollama",)
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 DEFAULTS = {
     # Identity
-    "NOVA_NAME": "NOVA",
-    "NOVA_VERSION": "1.0",
+    "JARVIS_NAME": "JARVIS",
+    "JARVIS_VERSION": "1.0",
     # Brain
-    "NOVA_BRAIN": "ollama",
+    "JARVIS_BRAIN": "ollama",
     "OLLAMA_HOST": "http://localhost:11434",
     "OLLAMA_MODEL": "",
     "OLLAMA_TIMEOUT": "300",
     "OLLAMA_NUM_CTX": "8192",
     # Storage, personality, logging
-    "NOVA_DATA_DIR": "data",
-    "NOVA_PERSONALITY_FILE": "personality/nova.txt",
-    "NOVA_LOG_LEVEL": "INFO",
+    "JARVIS_DATA_DIR": "data",
+    "JARVIS_PERSONALITY_FILE": "personality/jarvis.txt",
+    "JARVIS_LOG_LEVEL": "INFO",
     # Context
-    "NOVA_MAX_HISTORY": "40",
-    "NOVA_MAX_MEMORIES_IN_PROMPT": "50",
-    "NOVA_MAX_TOOL_STEPS": "8",
+    "JARVIS_MAX_HISTORY": "40",
+    "JARVIS_MAX_MEMORIES_IN_PROMPT": "50",
+    "JARVIS_MAX_TOOL_STEPS": "8",
     # PC control
-    "NOVA_WORKSPACE": "~/NOVA_Workspace",
-    "NOVA_APPS_FILE": "apps.json",
-    "NOVA_COMMAND_TIMEOUT": "60",
-    "NOVA_AUTO_APPROVE": "",
+    "JARVIS_WORKSPACE": "~/JARVIS_Workspace",
+    "JARVIS_APPS_FILE": "apps.json",
+    "JARVIS_COMMAND_TIMEOUT": "60",
+    "JARVIS_AUTO_APPROVE": "",
     # Web UI
-    "NOVA_WEB_HOST": "127.0.0.1",
-    "NOVA_WEB_PORT": "8765",
+    "JARVIS_WEB_HOST": "127.0.0.1",
+    "JARVIS_WEB_PORT": "8765",
     # Email (optional)
     "EMAIL_ADDRESS": "",
     "EMAIL_PASSWORD": "",
@@ -62,7 +62,7 @@ class ConfigError(Exception):
 
 @dataclass
 class Config:
-    """All of NOVA's settings in one place."""
+    """All of JARVIS's settings in one place."""
 
     name: str
     version: str
@@ -90,16 +90,16 @@ class Config:
     imap_host: str
     # The .env file these settings came from (brain setup saves the chosen model there).
     env_file: Path = PROJECT_ROOT / ".env"
-    # NOVA's own code folder (for skills and self-modification).
+    # JARVIS's own code folder (for skills and self-modification).
     project_root: Path = PROJECT_ROOT
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "nova.db"
+        return self.data_dir / "jarvis.db"
 
     @property
     def log_file(self) -> Path:
-        return self.data_dir / "logs" / "nova.log"
+        return self.data_dir / "logs" / "jarvis.log"
 
     @property
     def skills_dir(self) -> Path:
@@ -166,6 +166,15 @@ def _to_path(value: str) -> Path:
     return path
 
 
+def upgrade_old_keys(values: dict) -> dict:
+    """Settings from before the rename (NOVA_NAME, ...) still work as JARVIS_NAME, ..."""
+    upgraded = dict(values)
+    for key, value in values.items():
+        if key.startswith("NOVA_"):
+            upgraded.setdefault("JARVIS_" + key[len("NOVA_"):], value)
+    return upgraded
+
+
 def load_config(env_file: Path | None = None, environ: dict | None = None) -> Config:
     """
     Build a Config from defaults, the .env file and environment variables.
@@ -179,54 +188,54 @@ def load_config(env_file: Path | None = None, environ: dict | None = None) -> Co
         environ = dict(os.environ)
 
     settings = dict(DEFAULTS)
-    settings.update(read_env_file(env_file))
-    # Real environment variables win, but only for keys NOVA knows about.
-    settings.update({k: v for k, v in environ.items() if k in DEFAULTS})
+    settings.update(upgrade_old_keys(read_env_file(env_file)))
+    # Real environment variables win, but only for keys JARVIS knows about.
+    settings.update({k: v for k, v in upgrade_old_keys(environ).items() if k in DEFAULTS})
 
-    brain = settings["NOVA_BRAIN"].strip().lower()
+    brain = settings["JARVIS_BRAIN"].strip().lower()
     if brain not in SUPPORTED_BRAINS:
         raise ConfigError(
-            f"NOVA_BRAIN must be one of {', '.join(SUPPORTED_BRAINS)}; got {brain!r}"
+            f"JARVIS_BRAIN must be one of {', '.join(SUPPORTED_BRAINS)}; got {brain!r}"
         )
 
-    log_level = settings["NOVA_LOG_LEVEL"].strip().upper()
+    log_level = settings["JARVIS_LOG_LEVEL"].strip().upper()
     if log_level not in LOG_LEVELS:
         raise ConfigError(
-            f"NOVA_LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}; got {log_level!r}"
+            f"JARVIS_LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}; got {log_level!r}"
         )
 
     ollama_host = settings["OLLAMA_HOST"].strip().rstrip("/")
     if not ollama_host.startswith(("http://", "https://")):
         raise ConfigError(f"OLLAMA_HOST must start with http:// or https://; got {ollama_host!r}")
 
-    name = settings["NOVA_NAME"].strip()
+    name = settings["JARVIS_NAME"].strip()
     if not name:
-        raise ConfigError("NOVA_NAME cannot be empty")
+        raise ConfigError("JARVIS_NAME cannot be empty")
 
     auto_approve = frozenset(
-        item.strip() for item in settings["NOVA_AUTO_APPROVE"].split(",") if item.strip()
+        item.strip() for item in settings["JARVIS_AUTO_APPROVE"].split(",") if item.strip()
     )
 
     return Config(
         name=name,
-        version=settings["NOVA_VERSION"].strip() or DEFAULTS["NOVA_VERSION"],
+        version=settings["JARVIS_VERSION"].strip() or DEFAULTS["JARVIS_VERSION"],
         brain=brain,
         ollama_host=ollama_host,
         ollama_model=settings["OLLAMA_MODEL"].strip(),
         ollama_timeout=_to_int(settings, "OLLAMA_TIMEOUT", minimum=1),
         ollama_num_ctx=_to_int(settings, "OLLAMA_NUM_CTX", minimum=512),
-        data_dir=_to_path(settings["NOVA_DATA_DIR"]),
-        personality_file=_to_path(settings["NOVA_PERSONALITY_FILE"]),
+        data_dir=_to_path(settings["JARVIS_DATA_DIR"]),
+        personality_file=_to_path(settings["JARVIS_PERSONALITY_FILE"]),
         log_level=log_level,
-        max_history=_to_int(settings, "NOVA_MAX_HISTORY", minimum=2),
-        max_memories_in_prompt=_to_int(settings, "NOVA_MAX_MEMORIES_IN_PROMPT", minimum=0),
-        max_tool_steps=_to_int(settings, "NOVA_MAX_TOOL_STEPS", minimum=1),
-        workspace=_to_path(settings["NOVA_WORKSPACE"]),
-        apps_file=_to_path(settings["NOVA_APPS_FILE"]),
-        command_timeout=_to_int(settings, "NOVA_COMMAND_TIMEOUT", minimum=1),
+        max_history=_to_int(settings, "JARVIS_MAX_HISTORY", minimum=2),
+        max_memories_in_prompt=_to_int(settings, "JARVIS_MAX_MEMORIES_IN_PROMPT", minimum=0),
+        max_tool_steps=_to_int(settings, "JARVIS_MAX_TOOL_STEPS", minimum=1),
+        workspace=_to_path(settings["JARVIS_WORKSPACE"]),
+        apps_file=_to_path(settings["JARVIS_APPS_FILE"]),
+        command_timeout=_to_int(settings, "JARVIS_COMMAND_TIMEOUT", minimum=1),
         auto_approve=auto_approve,
-        web_host=settings["NOVA_WEB_HOST"].strip() or "127.0.0.1",
-        web_port=_to_int(settings, "NOVA_WEB_PORT", minimum=1),
+        web_host=settings["JARVIS_WEB_HOST"].strip() or "127.0.0.1",
+        web_port=_to_int(settings, "JARVIS_WEB_PORT", minimum=1),
         email_address=settings["EMAIL_ADDRESS"].strip(),
         email_password=settings["EMAIL_PASSWORD"].strip(),
         smtp_host=settings["SMTP_HOST"].strip(),

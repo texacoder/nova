@@ -47,7 +47,7 @@ WINDOWS_LOCATIONS = {
     "paint": [r"%SystemRoot%\System32\mspaint.exe"],
 }
 
-# Apps NOVA opened keep running on their own; keeping a reference stops Python warning about them.
+# Apps JARVIS opened keep running on their own; keeping a reference stops Python warning about them.
 _launched: list = []
 
 # Opening these with the default program would *run* them, so always ask.
@@ -227,7 +227,7 @@ class OpenApplication(Tool):
     description = (
         "Open an application installed on the user's PC (anything in the Start menu or on the Desktop, "
         "including Microsoft Store apps and installed web apps like 'YouTube'), optionally with arguments "
-        "such as a file to open. Example: name='geany', arguments=['C:/Users/me/NOVA_Workspace/hello.py']. "
+        "such as a file to open. Example: name='geany', arguments=['C:/Users/me/JARVIS_Workspace/hello.py']. "
         "When the user wants a website rather than an app, use open_path with the URL instead."
     )
     parameters = {

@@ -1,8 +1,8 @@
-# NOVA
+# JARVIS
 
-**NOVA** is a personal AI assistant, like J.A.R.V.I.S., that runs on your own PC.
+**JARVIS** is a personal AI assistant that runs on your own PC.
 
-- **Jarvis-style interface** in your browser: an animated core, chat, system panel, and voice input and output.
+- **Futuristic HUD interface** in your browser: an animated core, chat, system panel, and voice input and output.
 - **Acts on your PC:** writes code and opens it in Geany (or any app), opens files, folders, and websites, and runs commands.
 - **Searches the internet** and reads web pages.
 - **Learns from the internet:** researches a topic and saves what it learned, with sources, to a permanent knowledge base.
@@ -12,9 +12,9 @@
 - **Sets up its own brain:** installs the AI engine and downloads the right model for your PC in one click.
 - **Asks before risky actions:** sending email, running commands, touching files outside its own folder.
 
-**Cost: zero.** NOVA's brain is a free, open AI model (Qwen 2.5) that runs **on your PC** through [Ollama](https://ollama.com), which is also free and open source. Nothing you say leaves your computer, except web searches and email you ask for. Web search uses DuckDuckGo and Wikipedia (no API keys), and email uses your own account. NOVA uses only Python's standard library, so there is nothing to `pip install`.
+**Cost: zero.** JARVIS's brain is a free, open AI model (Qwen 2.5) that runs **on your PC** through [Ollama](https://ollama.com), which is also free and open source. Nothing you say leaves your computer, except web searches and email you ask for. Web search uses DuckDuckGo and Wikipedia (no API keys), and email uses your own account. JARVIS uses only Python's standard library, so there is nothing to `pip install`.
 
-> Claude Code was used to *develop* NOVA. It is not part of NOVA and NOVA doesn't use it.
+> Claude Code was used to *develop* JARVIS. It is not part of JARVIS and JARVIS doesn't use it.
 
 ---
 
@@ -24,26 +24,28 @@
 
 Download **Python 3.10+** from https://www.python.org/downloads/. In the installer, tick **"Add python.exe to PATH"**.
 
-### 2. Get NOVA
+### 2. Get JARVIS
 
 With Git:
 
 ```powershell
 cd $HOME\Documents
-git clone -b claude/laughing-bardeen-mjzwe3 https://github.com/texacoder/nova.git
+git clone -b claude/laughing-bardeen-mjzwe3 https://github.com/texacoder/nova.git jarvis
 ```
+
+(The GitHub project is still called `nova`; the last word, `jarvis`, names the folder on your PC.)
 
 Or download the branch as a ZIP from GitHub and extract it.
 
-### 3. Start NOVA
+### 3. Start JARVIS
 
-Open the `nova` folder and double-click **`start_nova.bat`**, or run `py main.py`.
+Open the `jarvis` folder and double-click **`start_jarvis.bat`**, or run `py main.py`.
 
-Your browser opens NOVA at http://127.0.0.1:8765. Keep the black console window open; closing it stops NOVA.
+Your browser opens JARVIS at http://127.0.0.1:8765. Keep the black console window open; closing it stops JARVIS.
 
-### 4. First run: let NOVA set up its brain
+### 4. First run: let JARVIS set up its brain
 
-On first start NOVA shows **"Brain offline"** with a **Set up NOVA's brain** button. Click it and NOVA:
+On first start JARVIS shows **"Brain offline"** with a **Set up JARVIS's brain** button. Click it and JARVIS:
 
 1. installs **Ollama**, the free engine that runs AI models (using `winget`, or the official installer if winget isn't available),
 2. picks the best model for your PC's memory:
@@ -56,13 +58,13 @@ On first start NOVA shows **"Brain offline"** with a **Set up NOVA's brain** but
 
 3. downloads it with a progress bar and saves the choice in `.env`.
 
-This happens once. After that NOVA starts with its brain ready. If Ollama is already installed with a suitable model, NOVA just uses it.
+This happens once. After that JARVIS starts with its brain ready. If Ollama is already installed with a suitable model, JARVIS just uses it.
 
-In terminal mode (`py main.py --cli`) NOVA asks `Set it up now? [Y/n]` instead. You can rerun setup any time with `/setup`.
+In terminal mode (`py main.py --cli`) JARVIS asks `Set it up now? [Y/n]` instead. You can rerun setup any time with `/setup`.
 
 **Prefer to do it by hand?** Install Ollama from https://ollama.com/download, run `ollama pull qwen2.5:7b`, and set `OLLAMA_MODEL=qwen2.5:7b` in `.env`.
 
-Other ways to start NOVA:
+Other ways to start JARVIS:
 
 ```powershell
 py main.py --cli          # terminal only, no browser
@@ -82,12 +84,18 @@ Check my latest 5 emails
 Send an email to friend@example.com saying I'll be late tonight
 How much free disk space do I have?
 Remember that my store is called EXORASTORE
-From now on, always add comments to code you write      ← NOVA learns this as a lesson
-Make yourself a skill that converts CSV files to JSON    ← NOVA writes new code for itself
-Improve your own help text so it's shorter               ← NOVA edits its own source code
+From now on, always add comments to code you write      ← JARVIS learns this as a lesson
+Make yourself a skill that converts CSV files to JSON    ← JARVIS writes new code for itself
+Improve your own help text so it's shorter               ← JARVIS edits its own source code
 ```
 
-When NOVA wants to do something risky, an **Authorisation required** box appears showing exactly what it will do, such as the full command or the full email. Nothing happens until you click **Approve**.
+When JARVIS wants to do something risky, an **Authorisation required** box appears showing exactly what it will do, such as the full command or the full email. Nothing happens until you click **Approve**.
+
+## Changing the assistant's name
+
+Ask it: **"From now on your name is FRIDAY."** It asks for approval, then the new name is used everywhere right away: the title, the browser tab, the chat, and how it introduces itself. It's saved as `JARVIS_NAME` in `.env`, which you can also edit by hand.
+
+**Upgrading from NOVA:** on first start, old `NOVA_…` settings, `data/nova.db` and the `NOVA_Workspace` folder are upgraded to their JARVIS names automatically. Nothing is lost, and the console window lists what was changed.
 
 ## Commands
 
@@ -101,18 +109,18 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `/forget <id>` | Delete a memory; `/forget K3` deletes knowledge #K3, `/forget L2` deletes lesson #L2 |
 | `/clear_memory` | Delete all memories (asks you to type `yes`) |
 | `/learn <topic>` | Research a topic online and save the result |
-| `/knowledge` | List what NOVA has learned |
-| `/lessons` | List lessons NOVA learned about how you want it to work |
-| `/setup` | Install or repair NOVA's brain automatically |
-| `/skills` | List abilities NOVA wrote for itself |
-| `/rollback` | Undo NOVA's most recent change to its own code |
-| `/restart` | Restart NOVA (activates changes to its own code; the browser tab reconnects by itself) |
-| `/tools` | List NOVA's abilities and which ones ask first |
+| `/knowledge` | List what JARVIS has learned |
+| `/lessons` | List lessons JARVIS learned about how you want it to work |
+| `/setup` | Install or repair JARVIS's brain automatically |
+| `/skills` | List abilities JARVIS wrote for itself |
+| `/rollback` | Undo JARVIS's most recent change to its own code |
+| `/restart` | Restart JARVIS (activates changes to its own code; the browser tab reconnects by itself) |
+| `/tools` | List JARVIS's abilities and which ones ask first |
 | `/new` | Start a fresh conversation (memories are kept) |
 | `/status` | Brain, memory, email, and workspace status |
-| `/exit` | Quit NOVA |
+| `/exit` | Quit JARVIS |
 
-## NOVA's abilities (tools)
+## JARVIS's abilities (tools)
 
 | Tool | What it does | Asks you first? |
 |---|---|---|
@@ -123,8 +131,8 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `learn_lesson` | Save a lesson about how to work for you (after corrections or preferences) | no |
 | `create_skill` | Write a new Python tool for itself and start using it | **always** (you see the code) |
 | `remove_skill`, `list_skills` | Manage its self-written skills | remove: **always** |
-| `read_nova_source` | Read its own source code | no |
-| `modify_nova_source` | Change its own code or personality (tested and backed up) | **always** (you see a diff) |
+| `read_jarvis_source` | Read its own source code | no |
+| `modify_jarvis_source` | Change its own code or personality (tested and backed up) | **always** (you see a diff) |
 | `get_datetime`, `system_info` | Date/time, OS, CPU, disk space | no |
 | `list_directory`, `read_file` | Browse and read files | only outside the workspace |
 | `write_file` | Create or edit text/code files | only outside the workspace |
@@ -134,13 +142,13 @@ These are typed in the chat (or clicked in the Quick commands panel):
 | `send_email` | Send an email | **always** |
 | `read_emails` | Read recent inbox emails (read-only) | no |
 
-**The workspace** is NOVA's own folder, `~/NOVA_Workspace` (for example `C:\Users\you\NOVA_Workspace`). NOVA can create and read files there freely, so code it writes for you goes there.
+**The workspace** is JARVIS's own folder, `~/JARVIS_Workspace` (for example `C:\Users\you\JARVIS_Workspace`). JARVIS can create and read files there freely, so code it writes for you goes there.
 
-To skip approval for a tool you trust, list it in `.env`, e.g. `NOVA_AUTO_APPROVE=open_path`. Think twice before auto-approving `run_command` or `send_email`.
+To skip approval for a tool you trust, list it in `.env`, e.g. `JARVIS_AUTO_APPROVE=open_path`. Think twice before auto-approving `run_command` or `send_email`.
 
 ### Apps (Geany, VS Code, ...)
 
-NOVA finds apps on your PATH and in common install folders (Geany, VS Code, Chrome, Firefox, Edge, Notepad++). If it says it can't find an app, copy `apps.example.json` to `apps.json` and add the app's full path:
+JARVIS finds apps on your PATH and in common install folders (Geany, VS Code, Chrome, Firefox, Edge, Notepad++). If it says it can't find an app, copy `apps.example.json` to `apps.json` and add the app's full path:
 
 ```json
 {
@@ -160,9 +168,9 @@ Apps listed in `apps.json` count as trusted and open without asking.
    EMAIL_ADDRESS=you@gmail.com
    EMAIL_PASSWORD=abcd efgh ijkl mnop
    ```
-4. Restart NOVA. `/status` should show your address.
+4. Restart JARVIS. `/status` should show your address.
 
-For Outlook or other providers, also set `SMTP_HOST`, `SMTP_PORT`, and `IMAP_HOST`. Your password stays in your local `.env`, which git ignores. NOVA always shows you the full email before sending.
+For Outlook or other providers, also set `SMTP_HOST`, `SMTP_PORT`, and `IMAP_HOST`. Your password stays in your local `.env`, which git ignores. JARVIS always shows you the full email before sending.
 
 ## Voice
 
@@ -171,42 +179,42 @@ For Outlook or other providers, also set `SMTP_HOST`, `SMTP_PORT`, and `IMAP_HOS
 
 ## How memory and learning work
 
-NOVA has four kinds of memory, all stored locally in `data/nova.db` (SQLite):
+JARVIS has four kinds of memory, all stored locally in `data/jarvis.db` (SQLite):
 
 1. **Conversation:** the current chat, kept in RAM and cleared on exit or `/new`.
-2. **Memories:** facts about you. They're saved when you use `/remember` or when NOVA decides something is worth remembering.
-3. **Knowledge:** what NOVA learned from the internet with `/learn` or `learn_topic`, stored with the source URLs.
-4. **Lessons:** how you want NOVA to behave. When you correct it ("don't explain so much", "my Geany is on D:"), NOVA saves a lesson and follows it in every future conversation.
+2. **Memories:** facts about you. They're saved when you use `/remember` or when JARVIS decides something is worth remembering.
+3. **Knowledge:** what JARVIS learned from the internet with `/learn` or `learn_topic`, stored with the source URLs.
+4. **Lessons:** how you want JARVIS to behave. When you correct it ("don't explain so much", "my Geany is on D:"), JARVIS saves a lesson and follows it in every future conversation.
 
-On each message, NOVA adds your memories, all lessons, and the most relevant knowledge to what it sends the model.
+On each message, JARVIS adds your memories, all lessons, and the most relevant knowledge to what it sends the model.
 
-You can also change NOVA's core personality by editing `personality/nova.txt`. Changes apply on the next message, with no restart needed.
+You can also change JARVIS's core personality by editing `personality/jarvis.txt`. Changes apply on the next message, with no restart needed.
 
-**Honest note on "learning":** the AI model itself isn't retrained; that would need expensive hardware. NOVA learns the way a person keeps notes: it researches, writes a summary, and looks the summary up later. This is free, and you can inspect it (`/knowledge`) and correct it (`/forget K<id>`).
+**Honest note on "learning":** the AI model itself isn't retrained; that would need expensive hardware. JARVIS learns the way a person keeps notes: it researches, writes a summary, and looks the summary up later. This is free, and you can inspect it (`/knowledge`) and correct it (`/forget K<id>`).
 
-## How NOVA improves itself
+## How JARVIS improves itself
 
-**New skills.** When you ask for something none of NOVA's tools can do, NOVA can write a new tool in Python (`create_skill`). You see the full code and approve it. NOVA then checks it in a separate process (syntax, structure, that it loads), saves it to `skills/`, and uses it immediately. If the skill has a bug, NOVA sees the error and can write a fixed version. Skills load again every time NOVA starts. They can't replace built-in tools. Delete a file in `skills/` to remove a skill.
+**New skills.** When you ask for something none of JARVIS's tools can do, JARVIS can write a new tool in Python (`create_skill`). You see the full code and approve it. JARVIS then checks it in a separate process (syntax, structure, that it loads), saves it to `skills/`, and uses it immediately. If the skill has a bug, JARVIS sees the error and can write a fixed version. Skills load again every time JARVIS starts. They can't replace built-in tools. Delete a file in `skills/` to remove a skill.
 
-**Editing its own code.** NOVA can read its source (`read_nova_source`) and change it (`modify_nova_source`). For every change:
+**Editing its own code.** JARVIS can read its source (`read_jarvis_source`) and change it (`modify_jarvis_source`). For every change:
 
 1. you see a diff of exactly what changes and approve it,
 2. the old version is backed up to `data/backups/`,
-3. NOVA's full test suite runs, and **if any test fails, the change is rolled back automatically**,
+3. JARVIS's full test suite runs, and **if any test fails, the change is rolled back automatically**,
 4. `/rollback` undoes the most recent change, and `/restart` activates code changes.
 
-Some files are **locked** so NOVA can't weaken its own safeguards: `tests/`, `tools/base.py` (approval rules), `tools/self_modify.py`, `tools/skills.py`, and `ui/server.py` (web security). You can still edit them yourself.
+Some files are **locked** so JARVIS can't weaken its own safeguards: `tests/`, `tools/base.py` (approval rules), `tools/self_modify.py`, `tools/skills.py`, and `ui/server.py` (web security). You can still edit them yourself.
 
-**Lessons and personality.** Corrections become lessons (see *How memory and learning work*), and `personality/nova.txt` changes apply from the next message.
+**Lessons and personality.** Corrections become lessons (see *How memory and learning work*), and `personality/jarvis.txt` changes apply from the next message.
 
 ## Safety
 
-- NOVA only listens on `127.0.0.1`, so other computers can't reach it.
-- The web page uses a secret token that changes on every start, so other websites open in your browser can't send commands to NOVA.
+- JARVIS only listens on `127.0.0.1`, so other computers can't reach it.
+- The web page uses a secret token that changes on every start, so other websites open in your browser can't send commands to JARVIS.
 - Risky actions need your click (see the tools table). The approval box shows exactly what will run, including the full code of new skills and a diff for self-edits. **Only approve code you're comfortable running on your PC**; a web page or email could try to trick the model into writing harmful code.
 - The model is told to treat web pages, files, and emails as data, not instructions. A malicious page could still try to trick it, which is exactly why approvals exist. **Read approval requests before clicking Approve.**
-- NOVA never needs administrator rights. Don't run it as administrator.
-- Everything NOVA does is logged in `data/logs/nova.log`.
+- JARVIS never needs administrator rights. Don't run it as administrator.
+- Everything JARVIS does is logged in `data/logs/jarvis.log`.
 
 ## Configuration
 
@@ -217,38 +225,38 @@ All settings live in `.env`; see `.env.example` for descriptions. The most usefu
 | `OLLAMA_MODEL` | *(set by automatic setup)* | Model to use, e.g. `qwen2.5:7b` |
 | `OLLAMA_NUM_CTX` | `8192` | Context size. Lower it (4096) if replies are slow |
 | `OLLAMA_TIMEOUT` | `300` | Seconds to wait for the model |
-| `NOVA_WORKSPACE` | `~/NOVA_Workspace` | NOVA's own folder |
-| `NOVA_AUTO_APPROVE` | *(empty)* | Tools that skip approval |
-| `NOVA_WEB_PORT` | `8765` | Web interface port |
-| `NOVA_MAX_TOOL_STEPS` | `8` | Max actions chained per request |
+| `JARVIS_WORKSPACE` | `~/JARVIS_Workspace` | JARVIS's own folder |
+| `JARVIS_AUTO_APPROVE` | *(empty)* | Tools that skip approval |
+| `JARVIS_WEB_PORT` | `8765` | Web interface port |
+| `JARVIS_MAX_TOOL_STEPS` | `8` | Max actions chained per request |
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
-| "Brain offline" / "Cannot reach Ollama" | Click **Set up NOVA's brain** or type `/setup`. NOVA starts Ollama itself if it's installed |
+| "Brain offline" / "Cannot reach Ollama" | Click **Set up JARVIS's brain** or type `/setup`. JARVIS starts Ollama itself if it's installed |
 | Automatic setup fails | Install Ollama from https://ollama.com/download, then click **Try again** |
 | "Model ... is not installed" | Type `/setup`, or run `ollama pull <model>` using the exact name in `OLLAMA_MODEL` |
-| NOVA chats but never takes actions | Your model doesn't support tools. Use `qwen2.5:7b` or `llama3.1:8b` (`/status` warns about this) |
+| JARVIS chats but never takes actions | Your model doesn't support tools. Use `qwen2.5:7b` or `llama3.1:8b` (`/status` warns about this) |
 | Very slow replies | Use a smaller model (`qwen2.5:3b`) or set `OLLAMA_NUM_CTX=4096` |
 | "Could not find an app" | Add it to `apps.json` (see above) |
-| Web search fails | Check your internet connection. DuckDuckGo sometimes blocks automated searches for a while; NOVA then falls back to Wikipedia |
-| Port 8765 in use | Set `NOVA_WEB_PORT=8770` in `.env` |
-| Anything else | Check `data\logs\nova.log` |
+| Web search fails | Check your internet connection. DuckDuckGo sometimes blocks automated searches for a while; JARVIS then falls back to Wikipedia |
+| Port 8765 in use | Set `JARVIS_WEB_PORT=8770` in `.env` |
+| Anything else | Check `data\logs\jarvis.log` |
 
 ## Project structure
 
 ```
-nova/
+jarvis/
 ├── main.py              # Start here: sets everything up, runs the web UI or --cli
-├── start_nova.bat       # Double-click launcher for Windows
+├── start_jarvis.bat       # Double-click launcher for Windows
 ├── agent.py             # The agent loop: context, tool calls, approvals, commands
 ├── config.py            # Settings from .env
 ├── brain/               # The AI model layer (swappable)
 │   ├── base.py          #   Brain interface: chat(messages, tools) + health_check()
 │   ├── local.py         #   Ollama adapter (native tool calling)
 │   └── setup.py         #   Automatic setup: install Ollama, choose + download model
-├── tools/               # NOVA's abilities
+├── tools/               # JARVIS's abilities
 │   ├── base.py          #   Tool class, registry, approval rules
 │   ├── web.py           #   web_search, fetch_webpage
 │   ├── knowledge.py     #   remember, recall, learn_topic, save_knowledge
@@ -257,10 +265,10 @@ nova/
 │   ├── system.py        #   get_datetime, system_info, run_command
 │   ├── email_tools.py   #   send_email, read_emails
 │   ├── skills.py        #   create_skill, remove_skill, list_skills (+ skill loader)
-│   └── self_modify.py   #   read_nova_source, modify_nova_source, rollback
+│   └── self_modify.py   #   read_jarvis_source, modify_jarvis_source, rollback
 ├── memory/              # SQLite memories + knowledge, conversation memory
-├── skills/              # Abilities NOVA wrote for itself (loaded at startup)
-├── personality/nova.txt # NOVA's personality and rules: edit freely
+├── skills/              # Abilities JARVIS wrote for itself (loaded at startup)
+├── personality/jarvis.txt # JARVIS's personality and rules: edit freely
 ├── ui/                  # Web interface (server.py + static/ HTML, CSS, JS)
 ├── utils/               # Logging and text helpers
 ├── tests/               # Automated tests

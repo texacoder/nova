@@ -1,7 +1,7 @@
 """
 Automatic brain setup.
 
-NOVA's brain is a free, open AI model (e.g. Qwen 2.5) running on this PC
+JARVIS's brain is a free, open AI model (e.g. Qwen 2.5) running on this PC
 through Ollama. This module gets it ready with no manual steps:
 
   1. Find Ollama, or install it (Windows: via winget, or the official installer)
@@ -36,7 +36,7 @@ OLLAMA_WINDOWS_INSTALLER = "https://ollama.com/download/OllamaSetup.exe"
 
 # Best model for each amount of RAM (GB). All support tool calling.
 MODELS_BY_RAM = [(15, "qwen2.5:7b"), (7, "qwen2.5:3b"), (0, "qwen2.5:1.5b")]
-# Already-installed models NOVA is happy to use, best first.
+# Already-installed models JARVIS is happy to use, best first.
 PREFERRED_FAMILIES = ["qwen2.5", "qwen3", "llama3.1", "llama3.2", "mistral-nemo", "mistral", "command-r"]
 
 
@@ -85,7 +85,7 @@ def recommended_model(ram_gb: float | None = None) -> str:
 
 
 def pick_installed_model(installed: list[str]) -> str | None:
-    """Choose the best already-installed model for NOVA, if any."""
+    """Choose the best already-installed model for JARVIS, if any."""
     for family in PREFERRED_FAMILIES:
         matches = [name for name in installed if name.split(":")[0] == family]
         if matches:
@@ -200,7 +200,7 @@ def _run_until_installed(command: list[str], label: str, notify, time_limit: flo
     installed (or its server answers), and stop the installer if it takes longer
     than `time_limit` seconds. Returns the path to ollama, or None.
     """
-    output_log = Path(tempfile.gettempdir()) / "nova_ollama_install.log"
+    output_log = Path(tempfile.gettempdir()) / "jarvis_ollama_install.log"
     flags = {"creationflags": subprocess.CREATE_NO_WINDOW} if IS_WINDOWS else {}
     try:
         with open(output_log, "w", encoding="utf-8", errors="replace") as output:
@@ -370,7 +370,7 @@ class SetupManager:
             if not server_running(host):
                 path = find_ollama()
                 if not path:
-                    self._update(message="Installing Ollama (the free engine that runs NOVA's brain)...")
+                    self._update(message="Installing Ollama (the free engine that runs the AI brain)...")
                     path = install_ollama(self._progress, host)
                 self._update(message="Starting the AI engine...", progress=None)
                 if not server_running(host):
@@ -379,7 +379,7 @@ class SetupManager:
             installed = installed_models(host)
             model = self.brain.model or pick_installed_model(installed) or recommended_model()
             if not model_installed(model, installed):
-                self._update(message=f"Downloading NOVA's brain ({model}). This is a one-time download of a few GB...")
+                self._update(message=f"Downloading the AI brain ({model}). This is a one-time download of a few GB...")
                 pull_model(host, model, lambda text, fraction: self._progress(
                     f"Downloading {model}: {text}", fraction))
             self._use_model(model)
@@ -387,7 +387,7 @@ class SetupManager:
             health = self.brain.health_check()
             if not health.ok:
                 raise SetupError(health.message)
-            self._update(state="done", message=f"NOVA's brain is ready ({model}).", progress=1.0)
+            self._update(state="done", message=f"The AI brain is ready ({model}).", progress=1.0)
         except SetupError as error:
             self._update(state="error", message=str(error), progress=None)
         except Exception as error:  # unexpected: log details, show a friendly message

@@ -100,9 +100,9 @@ class HelperTests(unittest.TestCase):
             env = Path(tmp) / ".env"
             setup.save_env_value(env, "OLLAMA_MODEL", "a")  # creates the file
             self.assertEqual(env.read_text(), "OLLAMA_MODEL=a\n")
-            env.write_text("# settings\nNOVA_NAME=NOVA\nOLLAMA_MODEL=\n")
+            env.write_text("# settings\nJARVIS_NAME=JARVIS\nOLLAMA_MODEL=\n")
             setup.save_env_value(env, "OLLAMA_MODEL", "qwen2.5:7b")
-            self.assertEqual(env.read_text(), "# settings\nNOVA_NAME=NOVA\nOLLAMA_MODEL=qwen2.5:7b\n")
+            self.assertEqual(env.read_text(), "# settings\nJARVIS_NAME=JARVIS\nOLLAMA_MODEL=qwen2.5:7b\n")
 
     def test_install_outside_windows_explains(self):
         with mock.patch.object(setup, "IS_WINDOWS", False):

@@ -36,7 +36,7 @@ class AgentTestCase(unittest.TestCase):
 
     def new_agent(self, brain, config=None):
         config = config or self.config
-        return Agent(config, brain, MemoryStore(config.db_path), "You are NOVA.")
+        return Agent(config, brain, MemoryStore(config.db_path), "You are JARVIS.")
 
 
 class ConversationTests(AgentTestCase):
@@ -46,23 +46,23 @@ class ConversationTests(AgentTestCase):
         self.assertEqual(brain.calls, [])
 
     def test_conversation_context_is_sent_to_brain(self):
-        brain = ScriptedBrain(BrainReply("ok"), BrainReply("NOVA"))
+        brain = ScriptedBrain(BrainReply("ok"), BrainReply("JARVIS"))
         agent = self.new_agent(brain)
-        agent.handle("My project is called NOVA.")
+        agent.handle("My project is called JARVIS.")
         agent.handle("What is my project called?")
         messages, tools = brain.calls[-1]
         self.assertEqual(messages[0]["role"], "system")
         self.assertEqual(
             [(m["role"], m["content"]) for m in messages[1:]],
-            [("user", "My project is called NOVA."), ("assistant", "ok"),
+            [("user", "My project is called JARVIS."), ("assistant", "ok"),
              ("user", "What is my project called?")],
         )
         self.assertTrue(tools)  # the tool list is offered to the brain
 
     def test_conversation_context_with_mock_brain(self):
         agent = self.new_agent(MockBrain())
-        agent.handle("My project is called NOVA.")
-        self.assertIn("NOVA", agent.handle("What is my project called?").text)
+        agent.handle("My project is called JARVIS.")
+        self.assertIn("JARVIS", agent.handle("What is my project called?").text)
 
     def test_memories_and_knowledge_in_system_prompt(self):
         brain = ScriptedBrain()
@@ -100,13 +100,13 @@ class ConversationTests(AgentTestCase):
     def test_personality_file_edits_apply_live(self):
         personality = Path(self.tmp.name) / "persona.txt"
         personality.write_text("You are {name}, version one.")
-        config = make_config(self.tmp.name, NOVA_PERSONALITY_FILE=str(personality))
+        config = make_config(self.tmp.name, JARVIS_PERSONALITY_FILE=str(personality))
         brain = ScriptedBrain()
         agent = self.new_agent(brain, config)
         personality.write_text("You are {name}, now with a British accent.")
         os.utime(personality, (1, 1))  # make sure the timestamp differs
         agent.handle("hi")
-        self.assertIn("NOVA, now with a British accent.", brain.calls[-1][0][0]["content"])
+        self.assertIn("JARVIS, now with a British accent.", brain.calls[-1][0][0]["content"])
 
     def test_brain_without_tool_support_gets_no_tools(self):
         brain = ScriptedBrain()
@@ -221,11 +221,11 @@ class ToolLoopTests(AgentTestCase):
         self.assertEqual(reply.text, "Written.")
 
     def test_auto_approve_skips_confirmation(self):
-        config = make_config(self.tmp.name, NOVA_AUTO_APPROVE="run_command")
-        brain = ScriptedBrain(call("run_command", command="echo nova-test"), BrainReply("ran"))
+        config = make_config(self.tmp.name, JARVIS_AUTO_APPROVE="run_command")
+        brain = ScriptedBrain(call("run_command", command="echo jarvis-test"), BrainReply("ran"))
         reply = self.new_agent(brain, config).handle("run it")
         self.assertIsNone(reply.pending)
-        self.assertIn("nova-test", reply.steps[0]["result"])
+        self.assertIn("jarvis-test", reply.steps[0]["result"])
 
     def test_unknown_tool_is_reported_not_crashed(self):
         brain = ScriptedBrain(call("format_disk"), BrainReply("Sorry."))
@@ -235,7 +235,7 @@ class ToolLoopTests(AgentTestCase):
 
     def test_step_limit(self):
         brain = ScriptedBrain(*[call("get_datetime") for _ in range(20)])
-        config = make_config(self.tmp.name, NOVA_MAX_TOOL_STEPS="3")
+        config = make_config(self.tmp.name, JARVIS_MAX_TOOL_STEPS="3")
         reply = self.new_agent(brain, config).handle("loop forever")
         self.assertIn("stopped after 3 steps", reply.text)
         self.assertEqual(len(brain.calls), 3)

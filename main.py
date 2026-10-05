@@ -1,14 +1,14 @@
 """
-NOVA - start here.
+JARVIS - start here.
 
-    python main.py              Start NOVA with the web interface (opens your browser)
-    python main.py --cli        Start NOVA in the terminal instead
+    python main.py              Start JARVIS with the web interface (opens your browser)
+    python main.py --cli        Start JARVIS in the terminal instead
     python main.py --no-browser Start the web interface without opening a browser
 
 This file only sets things up and handles input/output. The thinking,
 tools and memory logic live in agent.py and the packages it uses.
 
-NOVA runs inside a small "supervisor": when NOVA restarts itself (/restart,
+JARVIS runs inside a small "supervisor": when JARVIS restarts itself (/restart,
 e.g. after changing its own code), the supervisor starts it again.
 """
 
@@ -27,6 +27,7 @@ from config import PROJECT_ROOT, ConfigError, load_config
 from memory.database import MemoryStore, MemoryStoreError
 from personality import load_personality
 from utils.logger import get_logger, setup_logging
+from utils.migrate import migrate_env_file, migrate_files
 
 LINE = "=" * 44
 RESTART_EXIT_CODE = 3
@@ -37,6 +38,7 @@ def build_agent():
     env_file, example = PROJECT_ROOT / ".env", PROJECT_ROOT / ".env.example"
     if not env_file.exists() and example.exists():
         shutil.copy(example, env_file)  # first run: create settings from the example
+    upgrade_notes = migrate_env_file(env_file)  # settings from before the rename to JARVIS
     try:
         config = load_config()
     except ConfigError as error:
@@ -50,6 +52,10 @@ def build_agent():
         print(f"Could not create the log file at {config.log_file}: {error}")
         sys.exit(1)
     get_logger().info("Starting %s v%s (brain=%s)", config.name, config.version, config.brain)
+
+    upgrade_notes += migrate_files(config)
+    for note in upgrade_notes:
+        print(f"Upgrade: {note}")
 
     try:
         memory_store = MemoryStore(config.db_path)
@@ -75,7 +81,7 @@ def print_banner(config, agent) -> None:
     if health.ok:
         print(f"\nBrain online: {health.message}")
     else:
-        print("\nNOVA's brain (the local AI model) is not installed or not running yet.")
+        print(f"\n{config.name}'s brain (the local AI model) is not installed or not running yet.")
 
 
 def run_setup_in_terminal(agent) -> None:
@@ -174,18 +180,18 @@ def run_cli(config, agent) -> None:
 # --- web mode -----------------------------------------------------------------
 
 def run_web(config, agent, open_browser: bool) -> None:
-    from ui.server import NovaWebServer  # imported here so --cli never needs it
+    from ui.server import JarvisWebServer  # imported here so --cli never needs it
 
     try:
-        server = NovaWebServer(agent, config)
+        server = JarvisWebServer(agent, config)
     except OSError as error:
         print(f"Could not start the web interface on port {config.web_port}: {error}")
-        print("Another program may be using that port. Set NOVA_WEB_PORT in .env or use: python main.py --cli")
+        print("Another program may be using that port. Set JARVIS_WEB_PORT in .env or use: python main.py --cli")
         sys.exit(1)
 
     print_banner(config, agent)
     print(f"\nWeb interface: {server.url}")
-    print("Keep this window open while you use NOVA. Press Ctrl+C here to stop.\n")
+    print(f"Keep this window open while you use {config.name}. Press Ctrl+C here to stop.\n")
     if open_browser:
         threading.Timer(0.8, lambda: webbrowser.open(server.url)).start()
     try:
@@ -194,11 +200,11 @@ def run_web(config, agent, open_browser: bool) -> None:
         pass
     finally:
         server.httpd.server_close()
-    print("NOVA stopped.")
+    print(f"{config.name} stopped.")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="NOVA - your local personal AI assistant")
+    parser = argparse.ArgumentParser(description="Your local personal AI assistant")
     parser.add_argument("--cli", action="store_true", help="use the terminal instead of the web interface")
     parser.add_argument("--no-browser", action="store_true", help="don't open the browser automatically")
     args = parser.parse_args()
@@ -216,9 +222,9 @@ def main() -> int:
 
 
 def supervise() -> int:
-    """Run NOVA in a child process, and start it again whenever it asks to restart."""
+    """Run JARVIS in a child process, and start it again whenever it asks to restart."""
     args = sys.argv[1:]
-    env = {**os.environ, "NOVA_CHILD": "1"}
+    env = {**os.environ, "JARVIS_CHILD": "1"}
     while True:
         process = subprocess.Popen([sys.executable, os.path.abspath(__file__), *args], env=env)
         while True:
@@ -226,15 +232,15 @@ def supervise() -> int:
                 code = process.wait()
                 break
             except KeyboardInterrupt:
-                continue  # NOVA receives Ctrl+C too and shuts down by itself
+                continue  # JARVIS receives Ctrl+C too and shuts down by itself
         if code != RESTART_EXIT_CODE:
             return code
-        print("\nRestarting NOVA...\n")
+        print("\nRestarting...\n")
         if "--cli" not in args and "--no-browser" not in args:
             args = [*args, "--no-browser"]  # the open browser tab reconnects by itself
 
 
 if __name__ == "__main__":
-    if os.environ.get("NOVA_CHILD"):
+    if os.environ.get("JARVIS_CHILD"):
         sys.exit(main())
     sys.exit(supervise())

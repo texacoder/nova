@@ -1,4 +1,4 @@
-# NOVA uses only the Python standard library. Nothing needs to be installed.
+# JARVIS uses only the Python standard library. Nothing needs to be installed.
 # Optional, for nicer test output:
 #   pip install pytest
 #

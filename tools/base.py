@@ -1,12 +1,12 @@
 """
-The tool system: actions NOVA can perform on your PC and the internet.
+The tool system: actions JARVIS can perform on your PC and the internet.
 
 Each tool is a small class with:
   - name / description / parameters   -> shown to the AI model
   - run(**arguments)                   -> does the work, returns text
   - needs_confirmation(arguments)      -> True if YOU must approve it first
 
-Only tools registered in the ToolRegistry exist for NOVA. Anything risky
+Only tools registered in the ToolRegistry exist for JARVIS. Anything risky
 (sending email, running commands, writing outside the workspace...) asks
 for your approval, because a web page or email could contain text that
 tries to trick the AI into doing something you didn't want.
@@ -119,12 +119,12 @@ class Tool(ABC):
 
 
 class ToolRegistry:
-    """Keeps track of which tools NOVA is allowed to use."""
+    """Keeps track of which tools JARVIS is allowed to use."""
 
     def __init__(self, auto_approve: frozenset = frozenset()):
         self._tools: dict[str, Tool] = {}
         self.auto_approve = auto_approve
-        self.skill_names: set[str] = set()  # tools NOVA wrote for itself
+        self.skill_names: set[str] = set()  # tools JARVIS wrote for itself
         self.skill_errors: list[str] = []   # skills that failed to load at startup
 
     def register(self, tool: Tool, replace: bool = False) -> None:
@@ -177,7 +177,7 @@ class ToolRegistry:
         except ToolError as error:
             log.info("Tool %s failed: %s", name, error)
             return f"Error: {error}"
-        except Exception as error:  # a tool bug must never crash NOVA
+        except Exception as error:  # a tool bug must never crash JARVIS
             log.exception("Tool %s crashed", name)
             return f"Error: {name} failed unexpectedly ({type(error).__name__}: {error})"
         return truncate(str(result), MAX_RESULT_CHARS)

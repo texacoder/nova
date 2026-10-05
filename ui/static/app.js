@@ -1,7 +1,7 @@
-// NOVA web interface. Plain JavaScript, no libraries, works offline.
+// JARVIS web interface. Plain JavaScript, no libraries, works offline.
 "use strict";
 
-const TOKEN = document.querySelector('meta[name="nova-token"]').content;
+const TOKEN = document.querySelector('meta[name="jarvis-token"]').content;
 const $ = (id) => document.getElementById(id);
 const messagesEl = $("messages");
 const inputEl = $("input");
@@ -11,13 +11,14 @@ const coreLabel = $("core-label");
 const statePill = $("state-pill");
 
 let busy = false;
+let NAME = document.querySelector(".brand-name").textContent.trim();
 let speakReplies = false;
-try { speakReplies = localStorage.getItem("nova-speak") === "1"; } catch (e) { /* storage blocked */ }
+try { speakReplies = localStorage.getItem("jarvis-speak") === "1"; } catch (e) { /* storage blocked */ }
 
 // ---------- server calls ----------
 
 async function api(path, body) {
-  const options = { method: body ? "POST" : "GET", headers: { "X-Nova-Token": TOKEN } };
+  const options = { method: body ? "POST" : "GET", headers: { "X-Jarvis-Token": TOKEN } };
   if (body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
@@ -82,7 +83,7 @@ function addMessage(who, text, steps) {
   wrapper.className = "msg " + who;
   const label = document.createElement("div");
   label.className = "who";
-  label.textContent = who === "user" ? "YOU" : who === "nova" ? document.title.split(" ")[0] : "SYSTEM";
+  label.textContent = who === "user" ? "YOU" : who === "jarvis" ? NAME.toUpperCase() : "SYSTEM";
   wrapper.appendChild(label);
 
   if (steps && steps.length) wrapper.appendChild(renderSteps(steps));
@@ -126,7 +127,7 @@ function shortArgs(args) {
 
 function showTyping() {
   const el = document.createElement("div");
-  el.className = "msg nova";
+  el.className = "msg jarvis";
   el.innerHTML = '<div class="body typing"><span></span><span></span><span></span></div>';
   messagesEl.appendChild(el);
   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -159,7 +160,7 @@ async function run(request) {
     handleReply(reply);
   } catch (error) {
     typing.remove();
-    addMessage("system", "Lost contact with NOVA. Is the program still running? (" + error.message + ")");
+    addMessage("system", "Lost contact with " + NAME + ". Is the program still running? (" + error.message + ")");
     setState("offline", "Connection lost");
   } finally {
     busy = false;
@@ -170,14 +171,14 @@ async function run(request) {
 
 function handleReply(reply) {
   if (reply.pending) {
-    if (reply.steps && reply.steps.length) addMessage("nova", "", reply.steps);
+    if (reply.steps && reply.steps.length) addMessage("jarvis", "", reply.steps);
     $("confirm-text").textContent = reply.pending.description;
     $("confirm").hidden = false;
     setState("waiting", "Awaiting your approval");
     $("approve").focus();
     return;
   }
-  addMessage("nova", reply.text, reply.steps);
+  addMessage("jarvis", reply.text, reply.steps);
   if (reply.text) speak(reply.text);
   if (reply.text && reply.text.startsWith("Setting up my brain")) {
     showSetupCard(true);
@@ -185,12 +186,12 @@ function handleReply(reply) {
   }
   if (reply.restart) {
     setState("thinking", "Restarting");
-    addMessage("system", "Restarting NOVA... this page will reconnect by itself.");
+    addMessage("system", "Restarting " + NAME + "... this page will reconnect by itself.");
     waitForRestart();
     return;
   }
   if (reply.exit) {
-    addMessage("system", "NOVA has shut down. You can close this tab.");
+    addMessage("system", NAME + " has shut down. You can close this tab.");
     setState("offline", "Shut down");
     return;
   }
@@ -202,6 +203,7 @@ async function refreshStatus() {
   try {
     const data = await api("/api/status");
     brainOk = data.brain_ok;
+    applyName(data.name);
     const list = $("status-list");
     list.innerHTML = "";
     for (const [key, value] of Object.entries(data.status)) {
@@ -215,9 +217,19 @@ async function refreshStatus() {
     return data;
   } catch (error) {
     brainOk = false;
-    setState("offline", "Cannot reach NOVA");
+    setState("offline", "Cannot reach " + NAME);
     return null;
   }
+}
+
+// ---------- name (can change while running, e.g. "change your name to ...") ----------
+
+function applyName(name) {
+  if (!name || name === NAME) return;
+  NAME = name;
+  document.querySelector(".brand-name").textContent = name;
+  document.title = name + " - Personal AI";
+  inputEl.placeholder = "Talk to " + name + "...";
 }
 
 // ---------- restart ----------
@@ -228,13 +240,13 @@ async function waitForRestart() {
     try {
       const response = await fetch("/", { cache: "no-store" });
       if (response.ok) {
-        location.reload();  // the new NOVA has a new security token
+        location.reload();  // the restarted assistant has a new security token
         return;
       }
     } catch (error) { /* not up yet */ }
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-  addMessage("system", "NOVA didn't come back. Check the NOVA window on your PC.");
+  addMessage("system", NAME + " didn't come back. Check its window on your PC.");
   setState("offline", "Restart failed");
 }
 
@@ -279,7 +291,7 @@ async function pollSetup() {
       const data = await api("/api/setup");
       if (data.state === "done") {
         showSetupCard(false);
-        addMessage("nova", data.message + " I'm fully online now. How can I help?");
+        addMessage("jarvis", data.message + " I'm fully online now. How can I help?");
         break;
       }
       renderSetup(data);
@@ -287,7 +299,7 @@ async function pollSetup() {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   } catch (error) {
-    addMessage("system", "Lost contact with NOVA during setup: " + error.message);
+    addMessage("system", "Lost contact with " + NAME + " during setup: " + error.message);
   } finally {
     setupPolling = false;
     refreshStatus();
@@ -319,7 +331,7 @@ function setupVoice() {
   speakBtn.addEventListener("click", () => {
     speakReplies = !speakReplies;
     speakBtn.setAttribute("aria-pressed", String(speakReplies));
-    try { localStorage.setItem("nova-speak", speakReplies ? "1" : "0"); } catch (e) { /* ignore */ }
+    try { localStorage.setItem("jarvis-speak", speakReplies ? "1" : "0"); } catch (e) { /* ignore */ }
     if (!speakReplies && "speechSynthesis" in window) window.speechSynthesis.cancel();
   });
 
@@ -404,7 +416,7 @@ document.addEventListener("keydown", (event) => {
   if (!data) return;
   const name = data.name;
   if (data.brain_ok) {
-    addMessage("nova", `${name} online. How can I help?`);
+    addMessage("jarvis", `${name} online. How can I help?`);
   } else {
     showSetupCard(true);
     const setup = await api("/api/setup").catch(() => null);

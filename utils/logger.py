@@ -9,7 +9,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-LOGGER_NAME = "nova"
+LOGGER_NAME = "jarvis"
 
 # Until setup_logging() runs, silently drop log records instead of letting
 # Python print them to the terminal.
@@ -17,7 +17,7 @@ logging.getLogger(LOGGER_NAME).addHandler(logging.NullHandler())
 
 
 def setup_logging(log_file: Path, level: str = "INFO") -> logging.Logger:
-    """Send all 'nova' log messages to `log_file` (rotated at ~1 MB)."""
+    """Send all 'jarvis' log messages to `log_file` (rotated at ~1 MB)."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger(LOGGER_NAME)
@@ -38,5 +38,5 @@ def setup_logging(log_file: Path, level: str = "INFO") -> logging.Logger:
 
 
 def get_logger(name: str = "") -> logging.Logger:
-    """Get a logger for one part of NOVA, e.g. get_logger('memory')."""
+    """Get a logger for one part of JARVIS, e.g. get_logger('memory')."""
     return logging.getLogger(f"{LOGGER_NAME}.{name}" if name else LOGGER_NAME)
